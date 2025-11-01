@@ -1,0 +1,46 @@
+{
+  "name": "@7mind.io/sqlcipher-wasm",
+  "version": "1.0.5",
+  "description": "SQLite/SQLCipher WebAssembly build with high-level JavaScript API, comprehensive tests, and cross-platform compatibility",
+  "main": "dist/sqlcipher.js",
+  "types": "lib/sqlite-api.d.ts",
+  "files": [
+    "dist/",
+    "lib/",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=14.0.0"
+  },
+  "scripts": {
+    "prepublishOnly": "./build.sh",
+    "build": "./build.sh",
+    "test": "node test/run-all-tests.cjs",
+    "test:watch": "nodemon --watch test --watch dist test/run-all-tests.cjs",
+    "bench": "node bench/benchmark.cjs"
+  },
+  "keywords": [
+    "sqlcipher",
+    "sqlite",
+    "wasm",
+    "webassembly",
+    "database",
+    "sql",
+    "browser",
+    "offline",
+    "cross-platform",
+    "emscripten"
+  ],
+  "author": "Your Name <your.email@example.com>",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/7mind/sqlcipher-wasm.git"
+  },
+  "bugs": {
+    "url": "https://github.com/7mind/sqlcipher-wasm/issues"
+  },
+  "homepage": "https://github.com/7mind/sqlcipher-wasm#readme",
+  "devDependencies": {}
+}

@@ -1,0 +1,170 @@
+name: CI/CD
+
+on:
+  push:
+    branches: [main, master, develop]
+    tags:
+      - 'v*'
+  pull_request:
+    branches: [main, master]
+  release:
+    types: [created]
+
+jobs:
+  build-and-test:
+    name: Build and Test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@v25
+        with:
+          nix_path: nixpkgs=channel:nixos-unstable
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+            access-tokens = github.com=${{ secrets.GITHUB_TOKEN }}
+
+      - name: Cache Emscripten
+        uses: actions/cache@v3
+        with:
+          path: .emscripten-cache
+          key: ${{ runner.os }}-emscripten-${{ hashFiles('flake.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-emscripten-
+
+      - name: Cache OpenSSL
+        uses: actions/cache@v3
+        with:
+          path: openssl-wasm
+          key: ${{ runner.os }}-openssl-3.3.2-wasm
+          restore-keys: |
+            ${{ runner.os }}-openssl-
+
+      - name: Build OpenSSL
+        run: |
+          if [ ! -d "openssl-wasm/lib" ]; then
+            echo "Building OpenSSL for WASM..."
+            nix develop --command bash -c "./build-openssl.sh"
+          else
+            echo "Using cached OpenSSL"
+          fi
+
+      - name: Build WASM
+        run: |
+          nix develop --command bash -c "./build.sh"
+
+      - name: Prepare cross-platform test
+        run: |
+          nix develop --command bash -c "./tools/prepare-cross-platform-test.sh"
+
+      - name: Run all tests
+        run: |
+          nix develop --command bash -c "npm test"
+
+      - name: Run benchmarks
+        run: |
+          nix develop --command bash -c "npm run bench"
+
+      - name: Check build artifacts
+        run: |
+          ls -lh dist/
+          test -f dist/sqlcipher.js
+          test -f dist/sqlcipher.wasm
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: wasm-build
+          path: |
+            dist/
+            lib/
+          retention-days: 30
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: |
+            test/*.log
+          if-no-files-found: ignore
+
+  publish:
+    name: Publish
+    needs: build-and-test
+    runs-on: ubuntu-latest
+    if: (github.event_name == 'release' && github.event.action == 'created') || (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v'))
+    permissions:
+      contents: write
+      id-token: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@v24
+        with:
+          nix_path: nixpkgs=channel:nixos-unstable
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          registry-url: "https://registry.npmjs.org"
+
+      - name: Cache Emscripten
+        uses: actions/cache@v3
+        with:
+          path: .emscripten-cache
+          key: ${{ runner.os }}-emscripten-${{ hashFiles('flake.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-emscripten-
+
+      - name: Cache OpenSSL
+        uses: actions/cache@v3
+        with:
+          path: openssl-wasm
+          key: ${{ runner.os }}-openssl-3.3.2-wasm
+          restore-keys: |
+            ${{ runner.os }}-openssl-
+
+      - name: Build OpenSSL
+        run: |
+          if [ ! -d "openssl-wasm/lib" ]; then
+            echo "Building OpenSSL for WASM..."
+            nix develop --command bash -c "./build-openssl.sh"
+          else
+            echo "Using cached OpenSSL"
+          fi
+
+      - name: Build WASM for release
+        run: |
+          nix develop --command bash -c "./build.sh"
+
+      - name: Verify package contents
+        run: |
+          npm pack --dry-run
+          ls -lh dist/
+
+      - name: Publish to NPM
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+        run: nix develop --command npm publish --provenance --access public
+
+      - name: Create GitHub Release
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            dist/sqlcipher.js
+            dist/sqlcipher.wasm
+          generate_release_notes: true

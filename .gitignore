@@ -1,0 +1,62 @@
+*.dbs
+
+# Build artifacts
+build/
+dist/
+*.wasm
+*.js.mem
+
+# OpenSSL build artifacts
+openssl-*/
+openssl-wasm/
+*.tar.gz
+
+# Emscripten cache
+.emscripten-cache/
+
+# Node modules
+node_modules/
+
+# Test artifacts
+test/cross-platform-db-test.cjs
+tools/create-test-db
+/tmp/*.db
+
+# Temporary files
+*.tmp
+*.bak
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+*.log
+
+# Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Nix
+result
+result-*
+.envrc.cache
+
+# Direnv
+.direnv/
+
+# NPM
+*.tgz
+package-lock.json
+yarn.lock
+.npm/
+
+# Coverage
+coverage/
+.nyc_output/
+
+# CI
+.github/workflows/*.log

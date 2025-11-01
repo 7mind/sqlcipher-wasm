@@ -1,0 +1,196 @@
+name: PR Checks
+
+on:
+  pull_request:
+    types: [ opened, synchronize, reopened ]
+
+jobs:
+  lint-and-format:
+    name: Lint and Format Check
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Check shell scripts
+        run: |
+          find . -name "*.sh" -type f | while read file; do
+            echo "Checking $file"
+            bash -n "$file" || exit 1
+          done
+
+      - name: Check for TODO/FIXME
+        run: |
+          echo "Checking for unresolved TODOs/FIXMEs..."
+          ! grep -rn "FIXME\|XXX" --include="*.{js,cjs,cpp,sh}" . || echo "Found items to fix"
+
+  quick-build:
+    name: Quick Build Check
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@v24
+        with:
+          nix_path: nixpkgs=channel:nixos-unstable
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+
+      - name: Cache Emscripten
+        uses: actions/cache@v3
+        with:
+          path: .emscripten-cache
+          key: ${{ runner.os }}-emscripten-${{ hashFiles('flake.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-emscripten-
+
+      - name: Cache OpenSSL
+        uses: actions/cache@v3
+        with:
+          path: openssl-wasm
+          key: ${{ runner.os }}-openssl-3.3.2-wasm
+          restore-keys: |
+            ${{ runner.os }}-openssl-
+
+      - name: Build OpenSSL
+        run: |
+          if [ ! -d "openssl-wasm/lib" ]; then
+            echo "Building OpenSSL for WASM..."
+            nix develop --command bash -c "./build-openssl.sh"
+          else
+            echo "Using cached OpenSSL"
+          fi
+
+      - name: Quick build test
+        run: |
+          nix develop --command bash -c "./build.sh"
+          ls -lh dist/
+
+  quick-test:
+    name: Quick Test Suite
+    runs-on: ubuntu-latest
+    needs: quick-build
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@v24
+        with:
+          nix_path: nixpkgs=channel:nixos-unstable
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+
+      - name: Cache Emscripten
+        uses: actions/cache@v3
+        with:
+          path: .emscripten-cache
+          key: ${{ runner.os }}-emscripten-${{ hashFiles('flake.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-emscripten-
+
+      - name: Cache OpenSSL
+        uses: actions/cache@v3
+        with:
+          path: openssl-wasm
+          key: ${{ runner.os }}-openssl-3.3.2-wasm
+          restore-keys: |
+            ${{ runner.os }}-openssl-
+
+      - name: Build OpenSSL
+        run: |
+          if [ ! -d "openssl-wasm/lib" ]; then
+            echo "Building OpenSSL for WASM..."
+            nix develop --command bash -c "./build-openssl.sh"
+          else
+            echo "Using cached OpenSSL"
+          fi
+
+      - name: Build
+        run: |
+          nix develop --command bash -c "./build.sh"
+
+      - name: Prepare cross-platform test
+        run: |
+          nix develop --command bash -c "./tools/prepare-cross-platform-test.sh"
+
+      - name: Run tests
+        run: |
+          nix develop --command bash -c "npm test"
+
+  size-check:
+    name: Bundle Size Check
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@v24
+        with:
+          nix_path: nixpkgs=channel:nixos-unstable
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+
+      - name: Cache Emscripten
+        uses: actions/cache@v3
+        with:
+          path: .emscripten-cache
+          key: ${{ runner.os }}-emscripten-${{ hashFiles('flake.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-emscripten-
+
+      - name: Cache OpenSSL
+        uses: actions/cache@v3
+        with:
+          path: openssl-wasm
+          key: ${{ runner.os }}-openssl-3.3.2-wasm
+          restore-keys: |
+            ${{ runner.os }}-openssl-
+
+      - name: Build OpenSSL
+        run: |
+          if [ ! -d "openssl-wasm/lib" ]; then
+            echo "Building OpenSSL for WASM..."
+            nix develop --command bash -c "./build-openssl.sh"
+          else
+            echo "Using cached OpenSSL"
+          fi
+
+      - name: Build
+        run: |
+          nix develop --command bash -c "./build.sh"
+
+      - name: Check bundle sizes
+        run: |
+          echo "## Bundle Sizes" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| File | Size |" >> $GITHUB_STEP_SUMMARY
+          echo "|------|------|" >> $GITHUB_STEP_SUMMARY
+          du -h dist/sqlcipher.js | awk '{print "| sqlcipher.js | " $1 " |"}' >> $GITHUB_STEP_SUMMARY
+          du -h dist/sqlcipher.wasm | awk '{print "| sqlcipher.wasm | " $1 " |"}' >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          # Check if sizes are reasonable
+          JS_SIZE=$(stat -c%s dist/sqlcipher.js)
+          WASM_SIZE=$(stat -c%s dist/sqlcipher.wasm)
+
+          if [ $JS_SIZE -gt 100000 ]; then
+            echo "✓ JS size OK: $JS_SIZE bytes"
+          else
+            echo "⚠ JS size seems too small: $JS_SIZE bytes"
+            exit 1
+          fi
+
+          if [ $WASM_SIZE -gt 1000000 ]; then
+            echo "✓ WASM size OK: $WASM_SIZE bytes"
+          else
+            echo "⚠ WASM size seems too small: $WASM_SIZE bytes"
+            exit 1
+          fi
