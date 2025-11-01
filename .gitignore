@@ -1,4 +1,5 @@
 *.dbs
+test-db.html
 
 # Build artifacts
 build/

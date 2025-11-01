@@ -11,9 +11,12 @@ on:
     types: [created]
 
 jobs:
-  build-and-test:
-    name: Build and Test
+  build-test-publish:
+    name: Build, Test & Publish
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
 
     steps:
       - name: Checkout code
@@ -28,6 +31,13 @@ jobs:
           extra_nix_config: |
             experimental-features = nix-command flakes
             access-tokens = github.com=${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Node.js (for publishing)
+        if: (github.event_name == 'release' && github.event.action == 'created') || (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v'))
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          registry-url: "https://registry.npmjs.org"
 
       - name: Cache Emscripten
         uses: actions/cache@v3
@@ -94,64 +104,9 @@ jobs:
             test/*.log
           if-no-files-found: ignore
 
-  publish:
-    name: Publish
-    needs: build-and-test
-    runs-on: ubuntu-latest
-    if: (github.event_name == 'release' && github.event.action == 'created') || (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v'))
-    permissions:
-      contents: write
-      id-token: write
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          submodules: recursive
-
-      - name: Install Nix
-        uses: cachix/install-nix-action@v24
-        with:
-          nix_path: nixpkgs=channel:nixos-unstable
-          extra_nix_config: |
-            experimental-features = nix-command flakes
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: "20"
-          registry-url: "https://registry.npmjs.org"
-
-      - name: Cache Emscripten
-        uses: actions/cache@v3
-        with:
-          path: .emscripten-cache
-          key: ${{ runner.os }}-emscripten-${{ hashFiles('flake.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-emscripten-
-
-      - name: Cache OpenSSL
-        uses: actions/cache@v3
-        with:
-          path: openssl-wasm
-          key: ${{ runner.os }}-openssl-3.3.2-wasm
-          restore-keys: |
-            ${{ runner.os }}-openssl-
-
-      - name: Build OpenSSL
-        run: |
-          if [ ! -d "openssl-wasm/lib" ]; then
-            echo "Building OpenSSL for WASM..."
-            nix develop --command bash -c "./build-openssl.sh"
-          else
-            echo "Using cached OpenSSL"
-          fi
-
-      - name: Build WASM for release
-        run: |
-          nix develop --command bash -c "./build.sh"
-
+      # Publishing steps (only run on tags)
       - name: Verify package contents
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
         run: |
           npm pack --dry-run
           ls -lh dist/
