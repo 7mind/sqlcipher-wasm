@@ -1,6 +1,6 @@
 {
   "name": "@7mind.io/sqlcipher-wasm",
-  "version": "1.0.5",
+  "version": "1.0.7",
   "description": "SQLite/SQLCipher WebAssembly build with high-level JavaScript API, comprehensive tests, and cross-platform compatibility",
   "main": "dist/sqlcipher.js",
   "types": "lib/sqlite-api.d.ts",
