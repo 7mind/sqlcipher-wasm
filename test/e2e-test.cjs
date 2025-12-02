@@ -52,8 +52,7 @@ async function main() {
     try {
         // Initialize SQLite
         log('1. Initializing SQLite WASM module...', 'cyan');
-        const distPath = join(__dirname, '..', 'dist', 'sqlcipher.js');
-        const sqlite = await initSQLite(distPath);
+        const sqlite = await initSQLite();
         log('   ✓ SQLite initialized', 'green');
         console.log();
 

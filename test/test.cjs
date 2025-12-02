@@ -83,11 +83,8 @@ function assertThrows(fn, message) {
 // Load SQLCipher WASM module
 async function loadSqlcipher() {
     try {
-        const distPath = join(rootDir, 'dist', 'sqlcipher.js');
-        // Module auto-initializes and exports to global Module
-        const SQL = require(distPath);
-        // Wait for it to be ready
-        return new Promise((resolve, reject) => {
+        const SQL = require('../dist/sqlcipher.cjs');
+        return new Promise((resolve) => {
             if (SQL.calledRun) {
                 resolve(SQL);
             } else {

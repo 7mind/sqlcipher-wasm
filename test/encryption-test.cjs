@@ -28,7 +28,7 @@ async function runTests() {
     console.log('Encryption Test Suite');
     console.log('====================\n');
 
-    const sqlite = await initSQLite(join(__dirname, '../dist/sqlcipher.js'));
+    const sqlite = await initSQLite();
 
     // Test 1: PRAGMA key interface
     console.log('Test 1: PRAGMA key interface');

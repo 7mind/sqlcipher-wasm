@@ -11,10 +11,13 @@
       "import": "./lib/sqlite-api.mjs",
       "require": "./lib/sqlite-api.cjs"
     },
-    "./dist/sqlcipher.mjs": "./dist/sqlcipher.mjs"
+    "./dist/sqlcipher.mjs": "./dist/sqlcipher.mjs",
+    "./dist/sqlcipher.cjs": "./dist/sqlcipher.cjs"
   },
   "files": [
     "dist/sqlcipher.mjs",
+    "dist/sqlcipher.cjs",
+    "dist/sqlcipher.wasm",
     "lib/sqlite-api.mjs",
     "lib/sqlite-api.cjs",
     "lib/sqlite-api.d.ts",
