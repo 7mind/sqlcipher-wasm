@@ -108,8 +108,7 @@ async function main() {
     try {
         // Initialize SQLite WASM
         log('1. Initializing SQLite WASM module...', 'cyan');
-        const { join } = require('path');
-        const sqlite = await initSQLite(join(__dirname, '../dist/sqlcipher.js'));
+        const sqlite = await initSQLite();
         log('   ✓ SQLite initialized', 'green');
         console.log();
 
@@ -124,7 +123,7 @@ async function main() {
         const dbPath = '/cpp-created.db';
 
         // Access the underlying WASM module to write file
-        const Module = require(join(__dirname, '../dist/sqlcipher.js'));
+        const Module = sqlite.getModule();
         Module.FS.writeFile(dbPath, binaryString);
         log(\`   ✓ Written to virtual FS: \${dbPath}\`, 'green');
         console.log();
