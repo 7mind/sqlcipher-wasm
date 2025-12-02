@@ -92,7 +92,8 @@ EMCC_FLAGS=(
     "-s SAFE_HEAP=0"
 
     # Output
-    "-s SINGLE_FILE=0"
+    "-s MODULARIZE=1"
+    "-s EXPORT_NAME='initSqlcipher'"
 
     # Optimization
     "--closure 0"

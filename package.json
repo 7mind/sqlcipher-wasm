@@ -1,23 +1,34 @@
 {
   "name": "@7mind.io/sqlcipher-wasm",
-  "version": "1.0.7",
-  "description": "SQLite/SQLCipher WebAssembly build with high-level JavaScript API, comprehensive tests, and cross-platform compatibility",
-  "main": "dist/sqlcipher.js",
-  "types": "lib/sqlite-api.d.ts",
+  "version": "1.0.8",
+  "description": "A production-ready WebAssembly build of SQLCipher with real OpenSSL-based encryption, a high-level isomorphic API, and comprehensive test coverage.",
+  "type": "module",
+  "main": "./lib/sqlite-api.cjs",
+  "module": "./lib/sqlite-api.mjs",
+  "types": "./lib/sqlite-api.d.ts",
+  "exports": {
+    ".": {
+      "import": "./lib/sqlite-api.mjs",
+      "require": "./lib/sqlite-api.cjs"
+    },
+    "./dist/sqlcipher.mjs": "./dist/sqlcipher.mjs"
+  },
   "files": [
-    "dist/",
-    "lib/",
+    "dist/sqlcipher.mjs",
+    "lib/sqlite-api.mjs",
+    "lib/sqlite-api.cjs",
+    "lib/sqlite-api.d.ts",
     "README.md",
     "LICENSE"
   ],
   "engines": {
-    "node": ">=14.0.0"
+    "node": ">=16.0.0"
   },
   "scripts": {
-    "prepublishOnly": "./build.sh",
+    "prepublishOnly": "npm run build",
     "build": "./build.sh",
     "test": "node test/run-all-tests.cjs",
-    "test:watch": "nodemon --watch test --watch dist test/run-all-tests.cjs",
+    "test:watch": "nodemon --watch test --watch lib --watch dist test/run-all-tests.cjs",
     "bench": "node bench/benchmark.cjs"
   },
   "keywords": [
@@ -28,11 +39,13 @@
     "database",
     "sql",
     "browser",
+    "node",
+    "isomorphic",
     "offline",
     "cross-platform",
     "emscripten"
   ],
-  "author": "Your Name <your.email@example.com>",
+  "author": "7Mind",
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -42,5 +55,8 @@
     "url": "https://github.com/7mind/sqlcipher-wasm/issues"
   },
   "homepage": "https://github.com/7mind/sqlcipher-wasm#readme",
-  "devDependencies": {}
+  "devDependencies": {
+    "nodemon": "^3.0.0"
+  }
 }
+
