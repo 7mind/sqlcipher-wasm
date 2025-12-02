@@ -83,7 +83,8 @@ jobs:
       - name: Check build artifacts
         run: |
           ls -lh dist/
-          test -f dist/sqlcipher.js
+          test -f dist/sqlcipher.cjs
+          test -f dist/sqlcipher.mjs
           test -f dist/sqlcipher.wasm
 
       - name: Upload build artifacts
@@ -120,6 +121,7 @@ jobs:
         uses: softprops/action-gh-release@v1
         with:
           files: |
-            dist/sqlcipher.js
+            dist/sqlcipher.cjs
+            dist/sqlcipher.mjs
             dist/sqlcipher.wasm
           generate_release_notes: true

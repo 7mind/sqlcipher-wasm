@@ -92,10 +92,9 @@ EMCC_FLAGS_CJS=(
 EMCC_FLAGS_ESM=(
     "${EMCC_FLAGS_COMMON[@]}"
     "-s ENVIRONMENT=web"
-    "-s MODULARIZE=1"
-    "-s EXPORT_ES6=1"
     "-s EXPORT_NAME='initSqlcipher'"
     "-s SINGLE_FILE=1"
+    "-s MODULARIZE=1"
 )
 
 echo -e "${YELLOW}Configuring SQLCipher...${NC}"

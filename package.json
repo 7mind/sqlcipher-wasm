@@ -1,6 +1,6 @@
 {
   "name": "@7mind.io/sqlcipher-wasm",
-  "version": "1.0.8",
+  "version": "1.0.9",
   "description": "A production-ready WebAssembly build of SQLCipher with real OpenSSL-based encryption, a high-level isomorphic API, and comprehensive test coverage.",
   "type": "module",
   "main": "./lib/sqlite-api.cjs",
@@ -62,4 +62,3 @@
     "nodemon": "^3.0.0"
   }
 }
-
