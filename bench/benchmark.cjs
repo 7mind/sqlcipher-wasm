@@ -103,7 +103,7 @@ function formatTime(ms) {
 // Load SQLCipher WASM module
 async function loadSqlcipher() {
     try {
-        const distPath = join(rootDir, 'dist', 'sqlcipher.js');
+        const distPath = join(rootDir, 'dist', 'sqlcipher.cjs');
         // Module auto-initializes and exports to global Module
         const SQL = require(distPath);
         // Wait for it to be ready
