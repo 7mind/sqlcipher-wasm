@@ -24,7 +24,7 @@ fi
 
 # Copy sqlcipher source to build directory
 echo -e "${YELLOW}Copying SQLCipher source...${NC}"
-rsync -a --exclude='.git' "$SQLCIPHER_SRC/" "$BUILD_DIR/sqlcipher/"
+rsync -a --no-owner --no-group --exclude='.git' "$SQLCIPHER_SRC/" "$BUILD_DIR/sqlcipher/"
 
 # Make the build directory writable
 chmod -R u+w "$BUILD_DIR/sqlcipher"
@@ -69,10 +69,10 @@ SQLITE_CFLAGS=(
 # Emscripten flags
 EMCC_FLAGS_COMMON=(
     # Memory settings
-    "-s INITIAL_MEMORY=16777216"      # 16MB initial
-    "-s MAXIMUM_MEMORY=2147483648"    # 2GB max
-    "-s ALLOW_MEMORY_GROWTH=1"
-    "-s STACK_SIZE=512KB"
+    "-sINITIAL_MEMORY=16777216"      # 16MB initial
+    "-sMAXIMUM_MEMORY=2147483648"    # 2GB max
+    "-sALLOW_MEMORY_GROWTH=1"
+    "-sSTACK_SIZE=512KB"
 
     # Export settings
     "-sEXPORTED_RUNTIME_METHODS=FS,cwrap,ccall,setValue,getValue,UTF8ToString,stringToUTF8,lengthBytesUTF8,allocateUTF8"
@@ -86,15 +86,15 @@ EMCC_FLAGS_COMMON=(
 
 EMCC_FLAGS_CJS=(
     "${EMCC_FLAGS_COMMON[@]}"
-    "-s ENVIRONMENT=node"
+    "-sENVIRONMENT=node"
 )
 
 EMCC_FLAGS_ESM=(
     "${EMCC_FLAGS_COMMON[@]}"
-    "-s ENVIRONMENT=web"
-    "-s EXPORT_NAME='initSqlcipher'"
-    "-s SINGLE_FILE=1"
-    "-s MODULARIZE=1"
+    "-sENVIRONMENT=web"
+    "-sEXPORT_NAME='initSqlcipher'"
+    "-sSINGLE_FILE=1"
+    "-sMODULARIZE=1"
 )
 
 echo -e "${YELLOW}Configuring SQLCipher...${NC}"
