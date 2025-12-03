@@ -18,6 +18,7 @@
     "dist/sqlcipher.mjs",
     "dist/sqlcipher.cjs",
     "dist/sqlcipher.wasm",
+    "dist/sqlcipher.d.ts",
     "lib/sqlite-api.mjs",
     "lib/sqlite-api.cjs",
     "lib/sqlite-api.d.ts",

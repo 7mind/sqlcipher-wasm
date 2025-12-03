@@ -1,7 +1,9 @@
 
+import { EmscriptenModule } from '../dist/sqlcipher';
+
 declare module '@7mind.io/sqlcipher-wasm' {
     export class SQLiteDatabase {
-        constructor(module: any, dbPtr: number);
+        constructor(module: EmscriptenModule, dbPtr: number);
         setKey(key: string): void;
         rekey(newKey: string): void;
         exec(sql: string): void;
@@ -13,9 +15,9 @@ declare module '@7mind.io/sqlcipher-wasm' {
     }
 
     export class SQLiteAPI {
-        constructor(module: any);
+        constructor(module: EmscriptenModule);
         open(filename?: string, key?: string): SQLiteDatabase;
     }
 
-    export function init(): Promise<SQLiteAPI>;
+    export function initSQLite(): Promise<SQLiteAPI>;
 }
