@@ -40,56 +40,82 @@ Add to your `~/.config/nix/nix.conf` (or `/etc/nix/nix.conf`):
 experimental-features = nix-command flakes
 ```
 
+## Build Variants
+
+Two build targets are available, both using SQLCipher v4.9.0 with OpenSSL 3.3.2 encryption:
+
+| Target | Script | Shell | Emscripten | Output |
+|--------|--------|-------|------------|--------|
+| **WASM** (Node.js/Browser) | `build-wasm.sh` | `nix develop` | Latest | `dist/` + `target/results/sqlcipher-wasm.zip` |
+| **WebGL** (Unity) | `build-webgl.sh` | `nix develop .#webgl` | 3.1.10 (pinned for Unity 2022.3.22f) | `target/results/sqlcipher-webgl.zip` |
+
+The WebGL build additionally enables `SQLITE_ENABLE_SNAPSHOT` and `SQLITE_ENABLE_COLUMN_METADATA`.
+
 ## Quick Start
 
-1. **Clone the repository**
+### WASM (Node.js / Browser)
 
-2. **Enter the Nix environment**:
+Interactive:
 
-   ```bash
-   nix develop
-   ```
+```bash
+nix develop
+./build-openssl.sh
+./build-wasm.sh
+npm test
+```
 
-   Or with direnv:
-   ```bash
-   direnv allow
-   ```
+One-liner:
 
-3. **Build OpenSSL for WebAssembly** (first time only):
+```bash
+nix develop --command bash -c './build-openssl.sh && ./build-wasm.sh'
+```
 
-   ```bash
-   ./build-openssl.sh
-   ```
+### WebGL (Unity)
 
-4. **Build SQLCipher WASM**:
+Interactive:
 
-   ```bash
-   ./build.sh
-   ```
+```bash
+nix develop .#webgl
+./build-openssl.sh
+./build-webgl.sh
+```
 
-5. **Run all tests**:
+One-liner:
 
-   ```bash
-   npm test
-   ```
-
-6. **Run benchmarks**:
-
-   ```bash
-   npm run bench
-   ```
+```bash
+nix develop .#webgl --command bash -c './build-openssl.sh && ./build-webgl.sh'
+```
 
 ## Project Structure
 
 ```
 .
-├── flake.nix                       # Nix flake configuration
+├── flake.nix                       # Nix flake (default + webgl shells)
 ├── .envrc                          # direnv configuration
-├── build-openssl.sh                # OpenSSL build script
-├── build.sh                        # SQLCipher WASM build script
+├── lib.sh                          # Shared build utilities (includes patch_amalgamation)
+├── build-openssl.sh                # OpenSSL WASM build script
+├── build-wasm.sh                   # SQLCipher WASM build (CJS/ESM)
+├── build-webgl.sh                  # SQLCipher static lib build (Unity WebGL)
 ├── package.json                    # NPM package configuration
-├── dist/                           # Output directory
-│   ├── sqlcipher.js                # JavaScript loader
+├── target/
+│   ├── build/                      # Intermediate build artifacts
+│   │   ├── openssl-3.3.2/          # OpenSSL source (shared)
+│   │   └── emcc-<version>/         # Per-emscripten-version builds
+│   │       ├── openssl-wasm/       # Compiled OpenSSL
+│   │       ├── sqlcipher-wasm/     # WASM build working dir
+│   │       └── sqlcipher-webgl/    # WebGL build working dir
+│   └── results/                    # Final build outputs
+│       ├── sqlcipher-wasm/         # WASM artifacts (unpacked)
+│       ├── sqlcipher-wasm.zip      # WASM archive
+│       ├── sqlcipher-webgl/        # WebGL artifacts (unpacked)
+│       │   ├── libsqlcipher.a
+│       │   └── openssl/
+│       │       ├── libcrypto.a
+│       │       └── libssl.a
+│       └── sqlcipher-webgl.zip     # WebGL archive
+├── dist/                           # NPM package output
+│   ├── sqlcipher.cjs               # CommonJS module (Node.js)
+│   ├── sqlcipher.mjs               # ES module (browser)
 │   └── sqlcipher.wasm              # WebAssembly binary
 ├── lib/
 │   └── sqlite-api.cjs              # High-level JavaScript API
@@ -99,54 +125,64 @@ experimental-features = nix-command flakes
 │   ├── e2e-test.cjs                # End-to-end tests
 │   ├── file-db-test.cjs            # File persistence tests
 │   ├── encryption-test.cjs         # Encryption tests
-│   └── cross-platform-db-test.cjs  # C++ ↔ WASM compatibility (generated)
+│   └── cross-platform-db-test.cjs  # C++ <-> WASM compatibility (generated)
 ├── bench/
 │   └── benchmark.cjs               # Performance benchmarks
 ├── examples/
 │   └── example.cjs                 # Usage examples
 ├── tools/
-│   └── prepare-cross-platform-test.sh  # Generate cross-platform test
+│   └── prepare-cross-platform-test.sh
 └── docs/
-    └── archive/                    # Historical documentation
+    └── archive/
 ```
 
 ## Build Process
+
+All build scripts source `lib.sh` which auto-detects the emscripten version and sets up versioned build/cache directories. This allows the default and webgl shells to coexist without conflicts.
 
 ### 1. OpenSSL Build (`build-openssl.sh`)
 
 Downloads and compiles OpenSSL 3.3.2 to WebAssembly:
 
 - Configured for WASM target (`linux-generic32`)
-- Optimized build (`-O3`)
+- Optimized build (`-O3 -flto`)
 - Disabled features: ASM, threads, engines, hardware acceleration
-- Static library output
+- Static library output to `target/build/emcc-<version>/openssl-wasm/`
+- OpenSSL source tarball is shared across emscripten versions
 
-### 2. SQLCipher Build (`build.sh`)
+### 2. SQLCipher WASM Build (`build-wasm.sh`)
 
-Compiles SQLCipher with OpenSSL:
+Compiles SQLCipher with OpenSSL into CJS/ESM modules:
 
-1. Copies SQLCipher source from Nix store
+1. Copies SQLCipher v4.9.0 source from Nix store
 2. Configures and creates amalgamation (`sqlite3.c`)
-3. Compiles with OpenSSL crypto provider
-4. Links with OpenSSL static libraries
-5. Outputs `sqlcipher.js` and `sqlcipher.wasm`
+3. Patches amalgamation to use OpenSSL crypto provider
+4. Compiles and links with OpenSSL static libraries
+5. Outputs to `dist/` (for npm) and `target/results/sqlcipher-wasm/`
+6. Creates `target/results/sqlcipher-wasm.zip`
 
-**Key Compilation Flags**:
+### 3. SQLCipher WebGL Build (`build-webgl.sh`)
 
-SQLCipher flags:
+Compiles SQLCipher into a static library for Unity 2022.3.22f WebGL:
+
+1. Same amalgamation process as WASM build
+2. Compiles with emscripten 3.1.10 (ABI-compatible with Unity's bundled emscripten)
+3. Outputs `libsqlcipher.a` + OpenSSL libs to `target/results/sqlcipher-webgl/`
+4. Creates `target/results/sqlcipher-webgl.zip`
+
+**Compilation Flags** (shared by both builds):
+
 - `SQLITE_HAS_CODEC` - Enable encryption
 - `SQLCIPHER_CRYPTO_OPENSSL` - Use OpenSSL crypto provider
 - `SQLITE_TEMP_STORE=2` - Use memory for temporary storage
-- `SQLITE_THREADSAFE=0` - Disable threading (not needed in WASM)
+- `SQLITE_THREADSAFE=1` - Thread-safe (required by SQLCipher v4.9.0)
 - `SQLITE_ENABLE_FTS5` - Full-text search
 - `SQLITE_ENABLE_RTREE` - Spatial indexing
 - `SQLITE_ENABLE_JSON1` - JSON support
 
-Emscripten flags:
-- `INITIAL_MEMORY=16MB` - Starting memory
-- `MAXIMUM_MEMORY=2GB` - Maximum allowed memory
-- `ALLOW_MEMORY_GROWTH=1` - Dynamic memory growth
-- `ENVIRONMENT=node,web` - Node.js and browser support
+WebGL build adds:
+- `SQLITE_ENABLE_SNAPSHOT` - Database snapshot support
+- `SQLITE_ENABLE_COLUMN_METADATA` - Column metadata API
 
 ## Usage
 
@@ -291,7 +327,7 @@ The test suite includes 5 comprehensive test suites:
 - API key vs PRAGMA key equivalence
 
 ### 5. Cross-Platform Tests (`test/cross-platform-db-test.cjs`)
-- C++ (native SQLCipher) → WASM compatibility
+- C++ (native SQLCipher) -> WASM compatibility
 - Database created with native SQLCipher, read by WASM
 - Binary compatibility verification
 - Real-world migration scenarios
@@ -304,43 +340,6 @@ npm test
 Run tests in watch mode:
 ```bash
 npm run test:watch
-```
-
-### Test Output
-
-```
-╔════════════════════════════════════════════════════════════╗
-║          SQLCipher WASM Test Suite                         ║
-╚════════════════════════════════════════════════════════════╝
-
-Running 5 test suites...
-
-▶ Running Unit Tests...
-  Core SQLCipher functionality tests
-
-✓ Unit Tests completed in 542ms
-
-▶ Running End-to-End Tests...
-  Complete workflow tests
-
-✓ End-to-End Tests completed in 498ms
-
-...
-
-╔════════════════════════════════════════════════════════════╗
-║                    Test Summary                            ║
-╚════════════════════════════════════════════════════════════╝
-
-  ✓ PASS  Unit Tests               542ms
-  ✓ PASS  End-to-End Tests         498ms
-  ✓ PASS  File Database Tests      523ms
-  ✓ PASS  Encryption Tests         445ms
-  ✓ PASS  Cross-Platform Tests     389ms
-
-─────────────────────────────────────────────────────────────
-  ALL TESTS PASSED
-  Total: 5  Passed: 5  Failed: 0
-  Time: 2.40s
 ```
 
 ## Benchmarks
@@ -391,24 +390,24 @@ The reverse also works - databases created in WASM can be used in native applica
 
 ### Rebuilding
 
-After changing build scripts:
+Clean rebuild (WASM):
 
 ```bash
-./build.sh
+rm -rf target/ dist/
+./build-openssl.sh && ./build-wasm.sh
 ```
 
-Clean rebuild:
+Clean rebuild (WebGL):
 
 ```bash
-rm -rf build/ dist/
-./build.sh
+rm -rf target/
+./build-openssl.sh && ./build-webgl.sh
 ```
 
-Rebuild OpenSSL (rarely needed):
+Full clean:
 
 ```bash
-rm -rf openssl-wasm/ openssl-3.3.2/
-./build-openssl.sh
+rm -rf target/ dist/
 ```
 
 ### Adding Tests
@@ -434,13 +433,12 @@ GitHub Actions workflows:
 - **CI/CD** (`.github/workflows/ci.yml`) - Build, test, and publish on releases
 - **PR Checks** (`.github/workflows/pr-check.yml`) - Quick validation on pull requests
 
-Both workflows:
-1. Cache OpenSSL and Emscripten for faster builds
-2. Build OpenSSL if not cached
-3. Build SQLCipher WASM
-4. Generate cross-platform test
-5. Run all test suites
-6. Run benchmarks (CI only)
+CI pipeline:
+1. Build OpenSSL + SQLCipher WASM (`nix develop`)
+2. Build OpenSSL + SQLCipher WebGL (`nix develop .#webgl`)
+3. Run tests and benchmarks
+4. Upload `sqlcipher-wasm.zip` and `sqlcipher-webgl.zip` as artifacts
+5. Publish to NPM and create GitHub Release on tags
 
 ## Troubleshooting
 
@@ -455,7 +453,7 @@ nix develop
 
 Rebuild OpenSSL:
 ```bash
-rm -rf openssl-wasm/ openssl-3.3.2/
+rm -rf target/build/
 ./build-openssl.sh
 ```
 
@@ -463,7 +461,7 @@ rm -rf openssl-wasm/ openssl-3.3.2/
 
 Build first:
 ```bash
-./build.sh
+./build-openssl.sh && ./build-wasm.sh
 ```
 
 ### "file is encrypted or is not a database"
@@ -483,7 +481,7 @@ try {
 Increase Node.js memory:
 ```bash
 export NODE_OPTIONS="--max-old-space-size=4096"
-./build.sh
+./build-wasm.sh
 ```
 
 ### Cross-platform test fails
@@ -539,8 +537,8 @@ Create a GitHub release to trigger automatic publishing to:
 
 In the Nix environment:
 
-- `SQLCIPHER_SRC` - Path to SQLCipher source
-- `EM_CACHE` - Emscripten cache directory
+- `SQLCIPHER_SRC` - Path to SQLCipher source (set by flake.nix)
+- `EM_CACHE` - Emscripten cache directory (set by lib.sh per emcc version)
 - `NODE_PATH` - Node.js module search path
 
 ## Resources

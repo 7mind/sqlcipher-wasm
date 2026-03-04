@@ -1,57 +1,51 @@
 #!/usr/bin/env bash
 
 set -e
+source "$(dirname "$0")/lib.sh"
 
-# Colors for output
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-NC='\033[0m' # No Color
+setup_emscripten
+assert_set "$SQLCIPHER_SRC" "SQLCIPHER_SRC not set. Make sure you're in the nix environment."
 
-echo -e "${GREEN}Building SQLCipher for WebAssembly${NC}"
+echo -e "${GREEN}Building SQLCipher for WebAssembly (emcc ${EMCC_VERSION})${NC}"
 echo "========================================"
 
-# Create build directory
-BUILD_DIR="build"
-DIST_DIR="dist"
-mkdir -p "$BUILD_DIR" "$DIST_DIR"
-
-# Check if sqlcipher source is available
-if [ -z "$SQLCIPHER_SRC" ]; then
-    echo -e "${RED}Error: SQLCIPHER_SRC not set. Make sure you're in the nix environment.${NC}"
-    exit 1
-fi
-
-# Copy sqlcipher source to build directory
-echo -e "${YELLOW}Copying SQLCipher source...${NC}"
-rsync -a --no-owner --no-group --exclude='.git' "$SQLCIPHER_SRC/" "$BUILD_DIR/sqlcipher/"
-
-# Make the build directory writable
-chmod -R u+w "$BUILD_DIR/sqlcipher"
-
-cd "$BUILD_DIR/sqlcipher"
+BUILD_DIR="${EMCC_BUILD_DIR}/sqlcipher-wasm"
+DIST_DIR="${ROOT_DIR}/dist"
+WASM_RESULTS_DIR="${RESULTS_DIR}/sqlcipher-wasm"
+rm -rf "$BUILD_DIR" "$DIST_DIR" "$WASM_RESULTS_DIR" "${RESULTS_DIR}/sqlcipher-wasm.zip"
+mkdir -p "$BUILD_DIR" "$DIST_DIR" "$WASM_RESULTS_DIR"
 
 # OpenSSL paths
-OPENSSL_ROOT="$(cd ../.. && pwd)/openssl-wasm"
+OPENSSL_ROOT="${EMCC_BUILD_DIR}/openssl-wasm"
 OPENSSL_INCLUDE="$OPENSSL_ROOT/include"
 OPENSSL_LIB="$OPENSSL_ROOT/lib"
 
+# Copy sqlcipher source to build directory
+echo -e "${YELLOW}Copying SQLCipher source...${NC}"
+rsync -a --no-owner --no-group --exclude='.git' "$SQLCIPHER_SRC/" "$BUILD_DIR/"
+
+# Make the build directory writable
+chmod -R u+w "$BUILD_DIR"
+
+pushd "$BUILD_DIR" > /dev/null
+
 # SQLCipher compile flags
 SQLITE_CFLAGS=(
-    # Core SQLCipher flags - NOW ENABLED with OpenSSL!
+    # Core SQLCipher flags
     "-DSQLITE_HAS_CODEC"
     "-DSQLCIPHER_CRYPTO_OPENSSL"
     "-DSQLITE_TEMP_STORE=2"
+    "-DSQLITE_EXTRA_INIT=sqlcipher_extra_init"
+    "-DSQLITE_EXTRA_SHUTDOWN=sqlcipher_extra_shutdown"
 
     # OpenSSL include path
     "-I$OPENSSL_INCLUDE"
 
     # Performance optimizations
-    "-DSQLITE_THREADSAFE=0"
+    "-DSQLITE_THREADSAFE=1"
     "-DSQLITE_OMIT_LOAD_EXTENSION"
     "-DSQLITE_ENABLE_FTS5"
     "-DSQLITE_ENABLE_RTREE"
-    "-DSQLITE_ENABLE_EXPLAIN_COMMENTS"
     "-DSQLITE_ENABLE_JSON1"
 
     # Disable features not available in WASM
@@ -98,7 +92,7 @@ EMCC_FLAGS_ESM=(
 )
 
 echo -e "${YELLOW}Configuring SQLCipher...${NC}"
-./configure --with-crypto-lib=none 2>&1 | tail -5
+./configure 2>&1 | tail -5
 
 echo -e "${YELLOW}Creating amalgamation...${NC}"
 rm -f sqlite3.c sqlite3.h
@@ -109,8 +103,7 @@ if [ ! -f sqlite3.c ]; then
     exit 1
 fi
 
-echo -e "${YELLOW}Patching amalgamation...${NC}"
-bash ../../patch-amalgamation.sh sqlite3.c
+patch_amalgamation sqlite3.c
 
 echo -e "${YELLOW}Compiling SQLCipher core...${NC}"
 emcc "${SQLITE_CFLAGS[@]}" -I. -c sqlite3.c -o sqlite3.o
@@ -120,25 +113,22 @@ echo -e "${YELLOW}Building CJS version for Node.js...${NC}"
 emcc "${SQLITE_CFLAGS[@]}" "${EMCC_FLAGS_CJS[@]}" \
     sqlite3.o \
     "$OPENSSL_LIB/libcrypto.a" \
-    -o "../../$DIST_DIR/sqlcipher.cjs"
+    -o "$DIST_DIR/sqlcipher.cjs"
 
 # Build ESM version for web
 echo -e "${YELLOW}Building ESM version for web...${NC}"
 emcc "${SQLITE_CFLAGS[@]}" "${EMCC_FLAGS_ESM[@]}" \
     sqlite3.o \
     "$OPENSSL_LIB/libcrypto.a" \
-    -o "../../$DIST_DIR/sqlcipher.mjs"
+    -o "$DIST_DIR/sqlcipher.mjs"
 
-if [ $? -eq 0 ]; then
-    echo -e "${GREEN}✓ Build successful!${NC}"
-    echo -e "${GREEN}Output files:${NC}"
-    ls -lh "../../$DIST_DIR/"
-else
-    echo -e "${RED}✗ Build failed${NC}"
-    exit 1
-fi
+popd > /dev/null
 
-# Return to root directory
-cd ../..
+# Copy to results directory and create archive
+cp "$DIST_DIR"/* "$WASM_RESULTS_DIR/"
+(cd "$WASM_RESULTS_DIR" && zip -r "${RESULTS_DIR}/sqlcipher-wasm.zip" .)
 
-echo -e "${GREEN}Build complete!${NC}"
+echo -e "${GREEN}Build successful!${NC}"
+echo -e "${GREEN}Output:${NC}"
+ls -lh "$WASM_RESULTS_DIR/"
+ls -lh "${RESULTS_DIR}/sqlcipher-wasm.zip"

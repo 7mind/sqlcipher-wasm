@@ -1,34 +1,38 @@
 #!/usr/bin/env bash
 set -e
+source "$(dirname "$0")/lib.sh"
 
 # Build OpenSSL for WebAssembly using Emscripten
 # This script downloads and compiles OpenSSL 3.x for use with SQLCipher
 
 OPENSSL_VERSION="3.3.2"
-OPENSSL_DIR="openssl-${OPENSSL_VERSION}"
 OPENSSL_TAR="openssl-${OPENSSL_VERSION}.tar.gz"
-INSTALL_DIR="$(pwd)/openssl-wasm"
 
-echo "Building OpenSSL ${OPENSSL_VERSION} for WASM..."
+setup_emscripten
 
-# Download OpenSSL if not already present
-if [ ! -d "$OPENSSL_DIR" ]; then
-    if [ ! -f "$OPENSSL_TAR" ]; then
-        echo "Downloading OpenSSL..."
-        wget "https://www.openssl.org/source/${OPENSSL_TAR}"
-    fi
+SRC_DIR="${EMCC_BUILD_DIR}/openssl-${OPENSSL_VERSION}"
+INSTALL_DIR="${EMCC_BUILD_DIR}/openssl-wasm"
 
-    echo "Extracting OpenSSL..."
-    tar xzf "$OPENSSL_TAR"
+echo "Building OpenSSL ${OPENSSL_VERSION} for WASM (emcc ${EMCC_VERSION})..."
+
+# Clean previous builds (versioned output only, shared source is reused)
+echo "Cleaning previous builds..."
+rm -rf "$INSTALL_DIR"
+
+# Download OpenSSL source (shared across emcc versions)
+if [ ! -f "${BUILD_BASE}/$OPENSSL_TAR" ]; then
+    echo "Downloading OpenSSL..."
+    wget -P "$BUILD_BASE" "https://www.openssl.org/source/${OPENSSL_TAR}"
 fi
 
-cd "$OPENSSL_DIR"
+# Extract fresh source (configure/make pollute the tree)
+rm -rf "$SRC_DIR"
+echo "Extracting OpenSSL..."
+tar xzf "${BUILD_BASE}/$OPENSSL_TAR" -C "$EMCC_BUILD_DIR"
 
-# Clean previous build
-make clean 2>/dev/null || true
+pushd "$SRC_DIR" > /dev/null
 
 # Configure for WASM
-# We need to set CC and other variables for Emscripten
 echo "Configuring OpenSSL for WASM..."
 ./Configure \
     linux-generic32 \
@@ -44,20 +48,23 @@ echo "Configuring OpenSSL for WASM..."
     --prefix="$INSTALL_DIR" \
     --openssldir="$INSTALL_DIR" \
     CC="emcc" \
-    CFLAGS="-O3"
+    AR="emar" \
+    RANLIB="emranlib" \
+    CFLAGS="-O3 -flto" \
+    2>&1 | tail -20
 
-# Build
+# Build only libraries (skip CLI apps which fail to link under wasm-ld)
 echo "Building OpenSSL..."
-emmake make -j$(nproc)
+emmake make -j$(nproc) build_libs 2>&1 | tail -20
 
-# Install to our prefix
+# Install headers and libraries
 echo "Installing OpenSSL to $INSTALL_DIR..."
-make install_sw
+mkdir -p "$INSTALL_DIR/lib" "$INSTALL_DIR/include"
+cp libcrypto.a libssl.a "$INSTALL_DIR/lib/"
+cp -r include/openssl "$INSTALL_DIR/include/"
 
-cd ..
+popd > /dev/null
 
 echo ""
-echo "✓ OpenSSL built successfully!"
+echo "OpenSSL built successfully!"
 echo "  Install directory: $INSTALL_DIR"
-echo "  Headers: $INSTALL_DIR/include"
-echo "  Libraries: $INSTALL_DIR/lib"
