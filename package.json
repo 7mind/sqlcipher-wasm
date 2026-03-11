@@ -30,7 +30,7 @@
   },
   "scripts": {
     "prepublishOnly": "npm run build",
-    "build": "./build.sh",
+    "build": "./build-wasm.sh",
     "test": "node test/run-all-tests.cjs",
     "test:watch": "nodemon --watch test --watch lib --watch dist test/run-all-tests.cjs",
     "bench": "node bench/benchmark.cjs"

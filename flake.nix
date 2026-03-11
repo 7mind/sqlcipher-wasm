@@ -2,105 +2,94 @@
   description = "SQLCipher WebAssembly Build";
 
   inputs = {
-    nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+    nixpkgs.url = "github:NixOS/nixpkgs/25.11";
     flake-utils.url = "github:numtide/flake-utils";
+
+    # Pinned nixpkgs for emscripten 4.0.12 (working LLVM/wasm-ld with LTO)
+    nixpkgs-emcc-default.url = "github:NixOS/nixpkgs/2fb006b87f04c4d3bdf08cfdbc7fab9c13d94a15";
+
+    # Pinned nixpkgs for emscripten 3.1.10 (Unity 2022.3.22f compatible)
+    nixpkgs-emcc-unity.url = "github:NixOS/nixpkgs/9a17f325397d137ac4d219ecbd5c7f15154422f4";
   };
 
-  outputs = { self, nixpkgs, flake-utils }:
+  outputs = { self, nixpkgs, nixpkgs-emcc-default, nixpkgs-emcc-unity, flake-utils }:
     flake-utils.lib.eachDefaultSystem (system:
       let
         pkgs = nixpkgs.legacyPackages.${system};
+        pkgsDefaultEmcc = nixpkgs-emcc-default.legacyPackages.${system};
+        pkgsUnityEmcc = nixpkgs-emcc-unity.legacyPackages.${system};
 
-        # SQLCipher source
+        # SQLCipher v4.9.0 source (shared by both shells)
         sqlcipherSrc = pkgs.fetchFromGitHub {
           owner = "sqlcipher";
           repo = "sqlcipher";
-          rev = "v4.6.1";
-          sha256 = "sha256-VcD3NwVrC75kLOJiIgrnzVpkBPhjxTmEFyKg/87wHGc=";
+          rev = "v4.9.0";
+          sha256 = "sha256-FQlTz4iEU4AMzLZNvfYh8IGJHzP3cIXD2NFw8eNMmBU=";
         };
+
+        commonBuildInputs = with pkgs; [
+          gnumake
+          cmake
+          gcc
+          pkg-config
+          sqlcipher
+          openssl
+          nodejs_24
+          tcl
+          git
+          which
+          file
+          coreutils
+          zip
+          wget
+        ];
+
+        commonShellHook = ''
+          export SQLCIPHER_SRC="${sqlcipherSrc}"
+          export NODE_PATH="$PWD/node_modules:$NODE_PATH"
+          mkdir -p dist target test bench
+        '';
 
       in
       {
-        devShells.default = pkgs.mkShell {
-          buildInputs = with pkgs; [
-            # Emscripten for WASM compilation
-            emscripten
+        devShells = {
+          # Default shell: latest emscripten for standalone WASM builds
+          default = pkgs.mkShell {
+            buildInputs = [ pkgsDefaultEmcc.emscripten ] ++ commonBuildInputs;
 
-            # Build tools
-            gnumake
-            cmake
-            gcc
-            pkg-config
+            shellHook = ''
+              ${commonShellHook}
+              echo "SQLCipher WASM Build Environment"
+              echo "=================================="
+              echo "Emscripten version: $(emcc --version | head -n1)"
+              echo "Node.js version: $(node --version)"
+              echo ""
+              echo "Available commands:"
+              echo "  ./build-openssl.sh  - Build OpenSSL for WASM"
+              echo "  ./build-wasm.sh     - Build sqlcipher CJS/ESM"
+              echo "  npm test            - Run tests"
+              echo "  npm run bench       - Run benchmarks"
+              echo ""
+            '';
+          };
 
-            # SQLCipher for C++ test program (encrypted SQLite)
-            sqlcipher
+          # WebGL shell: emscripten 3.1.10 pinned for Unity 2022.3.22f
+          webgl = pkgs.mkShell {
+            buildInputs = [ pkgsUnityEmcc.emscripten ] ++ commonBuildInputs;
 
-            # OpenSSL and crypto libraries (required by sqlcipher)
-            openssl
-
-            # Node.js for testing and benchmarking
-            nodejs_24
-
-            # TCL for SQLite configuration
-            tcl
-
-            # Git for fetching sources
-            git
-
-            # General utilities
-            which
-            file
-            coreutils
-          ];
-
-          shellHook = ''
-            echo "SQLCipher WASM Build Environment"
-            echo "=================================="
-            echo "Emscripten version: $(emcc --version | head -n1)"
-            echo "Node.js version: $(node --version)"
-            echo ""
-            echo "Available commands:"
-            echo "  ./build.sh       - Build sqlcipher.wasm"
-            echo "  npm test         - Run tests"
-            echo "  npm run bench    - Run benchmarks"
-            echo ""
-
-            # Set up environment variables
-            export SQLCIPHER_SRC="${sqlcipherSrc}"
-            export EM_CACHE="$PWD/.emscripten-cache"
-            export NODE_PATH="$PWD/node_modules:$NODE_PATH"
-
-            # Create directories if they don't exist
-            mkdir -p build dist test bench
-          '';
-        };
-
-        packages.sqlcipher-wasm = pkgs.stdenv.mkDerivation {
-          name = "sqlcipher-wasm";
-          src = sqlcipherSrc;
-
-          nativeBuildInputs = with pkgs; [
-            emscripten
-            openssl
-            tcl
-          ];
-
-          buildPhase = ''
-            # Configure for WASM build
-            emconfigure ./configure \
-              --enable-tempstore=yes \
-              CFLAGS="-DSQLITE_HAS_CODEC -DSQLITE_TEMP_STORE=2" \
-              LDFLAGS="-lcrypto"
-
-            # Build with Emscripten
-            emmake make
-          '';
-
-          installPhase = ''
-            mkdir -p $out
-            cp sqlite3.wasm $out/ || true
-            cp .libs/libsqlcipher.a $out/ || true
-          '';
+            shellHook = ''
+              ${commonShellHook}
+              echo "SQLCipher WebGL Build Environment"
+              echo "========================================="
+              echo "Emscripten version: $(emcc --version | head -n1)"
+              echo "  (pinned for Unity 2022.3.22f compatibility)"
+              echo ""
+              echo "Available commands:"
+              echo "  ./build-openssl.sh  - Build OpenSSL for WASM"
+              echo "  ./build-webgl.sh    - Build libsqlcipher.a for Unity WebGL"
+              echo ""
+            '';
+          };
         };
       }
     );

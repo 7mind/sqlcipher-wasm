@@ -2,15 +2,10 @@
 test-db.html
 
 # Build artifacts
-build/
+target/
 dist/
 *.wasm
 *.js.mem
-
-# OpenSSL build artifacts
-openssl-*/
-openssl-wasm/
-*.tar.gz
 
 # Emscripten cache
 .emscripten-cache/
