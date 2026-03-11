@@ -73,6 +73,7 @@ jobs:
           test -f dist/sqlcipher.cjs
           test -f dist/sqlcipher.mjs
           test -f dist/sqlcipher.wasm
+          ls -lh target/results/
           test -f target/results/sqlcipher-wasm.zip
           test -f target/results/sqlcipher-webgl.zip
 
