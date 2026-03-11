@@ -53,7 +53,7 @@ jobs:
 
       - name: Build WebGL: OpenSSL + SQLCipher
         run: |
-          nix develop .#webgl --command bash -c "./build-openssl.sh && ./build-webgl.sh"
+          nix develop '.#webgl' --command bash -c "./build-openssl.sh && ./build-webgl.sh"
 
       - name: Prepare cross-platform test
         run: |

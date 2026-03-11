@@ -51,7 +51,7 @@ jobs:
       - name: Build
         run: |
           nix develop --command bash -c "./build-openssl.sh && ./build-wasm.sh"
-          nix develop .#webgl --command bash -c "./build-openssl.sh && ./build-webgl.sh"
+          nix develop '.#webgl' --command bash -c "./build-openssl.sh && ./build-webgl.sh"
           ls -lh dist/
           ls -lh target/results/
 
@@ -85,7 +85,7 @@ jobs:
 
       - name: Build WebGL: OpenSSL + SQLCipher
         run: |
-          nix develop .#webgl --command bash -c "./build-openssl.sh && ./build-webgl.sh"
+          nix develop '.#webgl' --command bash -c "./build-openssl.sh && ./build-webgl.sh"
 
       - name: Prepare cross-platform test
         run: |
@@ -121,7 +121,7 @@ jobs:
       - name: Build
         run: |
           nix develop --command bash -c "./build-openssl.sh && ./build-wasm.sh"
-          nix develop .#webgl --command bash -c "./build-openssl.sh && ./build-webgl.sh"
+          nix develop '.#webgl' --command bash -c "./build-openssl.sh && ./build-webgl.sh"
           ls -lh dist/
           ls -lh target/results/
 
