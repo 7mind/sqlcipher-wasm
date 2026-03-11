@@ -79,11 +79,11 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-emscripten-
 
-      - name: Build WASM: OpenSSL + SQLCipher
+      - name: Build WASM - OpenSSL + SQLCipher
         run: |
           nix develop --command bash -c "./build-openssl.sh && ./build-wasm.sh"
 
-      - name: Build WebGL: OpenSSL + SQLCipher
+      - name: Build WebGL - OpenSSL + SQLCipher
         run: |
           nix develop '.#webgl' --command bash -c "./build-openssl.sh && ./build-webgl.sh"
 
