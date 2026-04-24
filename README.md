@@ -42,14 +42,23 @@ experimental-features = nix-command flakes
 
 ## Build Variants
 
-Two build targets are available, both using SQLCipher v4.9.0 with OpenSSL 3.3.2 encryption:
+Three build targets are available, all using SQLCipher v4.9.0:
 
-| Target | Script | Shell | Emscripten | Output |
-|--------|--------|-------|------------|--------|
-| **WASM** (Node.js/Browser) | `build-wasm.sh` | `nix develop` | Latest | `dist/` + `target/results/sqlcipher-wasm.zip` |
-| **WebGL** (Unity) | `build-webgl.sh` | `nix develop .#webgl` | 3.1.10 (pinned for Unity 2022.3.22f) | `target/results/sqlcipher-webgl.zip` |
+| Target | Script(s) | Shell | Emscripten | Crypto | Output |
+|--------|-----------|-------|------------|--------|--------|
+| **WASM** (Node.js/Browser) | `build-wasm.sh` | `nix develop` | Latest (in-tree) | OpenSSL 3.3.2 | `dist/` + `target/results/sqlcipher-wasm.zip` |
+| **WebGL** (Unity 2022.3.22f) | `build-webgl.sh` | `nix develop .#webgl` | 3.1.10 (pinned) | OpenSSL 3.3.2 | `target/results/sqlcipher-webgl.zip` |
+| **Amalgamation** (Unity, any emcc) | `build-libtomcrypt.sh` → `build-amalgamation.sh` | `nix develop` | n/a (source bundle) | libtomcrypt 1.18.2 | `target/results/sqlcipher-amalgamation.zip` |
 
 The WebGL build additionally enables `SQLITE_ENABLE_SNAPSHOT` and `SQLITE_ENABLE_COLUMN_METADATA`.
+
+### When to use the Amalgamation bundle
+
+The **WebGL** target above emits a prebuilt `libsqlcipher.a` that must ABI-match the emcc Unity ships with. That's fine for a single pinned Unity version but breaks across upgrades: a `.a` built with emcc 3.1.10 (Unity 2022.3.22f) linked into Unity 6000.4 (emcc 3.1.38) traps at runtime with `signature_mismatch:time` — libc signatures like `time_t` drifted between emcc versions.
+
+The **Amalgamation** target sidesteps this entirely: it ships portable C source (one `sqlite3.c`, one `libtomcrypt.c`, and a small set of headers) that Unity's own bundled emcc compiles in-tree, so the same bundle works across 2022.3, 6000.x, and future Unity versions with no toolchain pin.
+
+Crypto is libtomcrypt instead of OpenSSL because OpenSSL has no usable source-drop path (Perl-driven Configure, generated `opensslconf.h`, hundreds of per-file `-D` flags). libtomcrypt amalgamates cleanly into a single `.c` once curated to the subset SQLCipher actually calls (AES, SHA1/2, HMAC, CBC/ECB, PBKDF2, PRNG, registration helpers).
 
 ## Quick Start
 
@@ -70,7 +79,7 @@ One-liner:
 nix develop --command bash -c './build-openssl.sh && ./build-wasm.sh'
 ```
 
-### WebGL (Unity)
+### WebGL (Unity 2022.3.22f, prebuilt .a)
 
 Interactive:
 
@@ -86,6 +95,35 @@ One-liner:
 nix develop .#webgl --command bash -c './build-openssl.sh && ./build-webgl.sh'
 ```
 
+### Amalgamation (Unity, any emcc — source bundle)
+
+Interactive:
+
+```bash
+nix develop
+./build-libtomcrypt.sh
+./build-amalgamation.sh
+```
+
+One-liner:
+
+```bash
+nix develop --command bash -c './build-libtomcrypt.sh && ./build-amalgamation.sh'
+```
+
+The output `target/results/sqlcipher-amalgamation/` is a flat drop-in directory:
+
+```
+sqlite3.c              SQLCipher amalgamation (compile flags baked in at top)
+sqlite3.h              SQLCipher public header
+libtomcrypt.c          curated libtomcrypt amalgamation
+tomcrypt*.h            13 libtomcrypt headers (angled includes rewritten to quoted)
+LICENSE_libtomcrypt    libtomcrypt license
+README.txt             Unity integration notes
+```
+
+Copy the directory into `Assets/Plugins/WebGL/sqlcipher/` — that's it. No plugin importer compile flags, no include paths, no force-includes. Every `-D` and `-I` that would normally be needed is either prepended into `sqlite3.c` itself or obviated by the flat layout (quoted sibling includes resolve via clang's current-file-directory search). The same bundle compiles unchanged on Unity 2022.3 (emcc 3.1.10), Unity 6000.4 (emcc 3.1.38), and whatever emcc the next Unity ships.
+
 ## Project Structure
 
 ```
@@ -95,11 +133,16 @@ nix develop .#webgl --command bash -c './build-openssl.sh && ./build-webgl.sh'
 ├── lib.sh                          # Shared build utilities (includes patch_amalgamation)
 ├── build-openssl.sh                # OpenSSL WASM build script
 ├── build-wasm.sh                   # SQLCipher WASM build (CJS/ESM)
-├── build-webgl.sh                  # SQLCipher static lib build (Unity WebGL)
+├── build-webgl.sh                  # SQLCipher static lib build (Unity WebGL, emcc-pinned)
+├── build-libtomcrypt.sh            # libtomcrypt curated-amalgamation stage (no emcc)
+├── build-amalgamation.sh           # SQLCipher + libtomcrypt source bundle (Unity, any emcc)
 ├── package.json                    # NPM package configuration
 ├── target/
 │   ├── build/                      # Intermediate build artifacts
 │   │   ├── openssl-3.3.2/          # OpenSSL source (shared)
+│   │   ├── libtomcrypt-1.18.2/     # libtomcrypt source (shared)
+│   │   ├── libtomcrypt-amalg/      # Curated libtomcrypt amalgamation output
+│   │   ├── amalgamation/           # SQLCipher amalgamation working dir
 │   │   └── emcc-<version>/         # Per-emscripten-version builds
 │   │       ├── openssl-wasm/       # Compiled OpenSSL
 │   │       ├── sqlcipher-wasm/     # WASM build working dir
@@ -112,7 +155,9 @@ nix develop .#webgl --command bash -c './build-openssl.sh && ./build-webgl.sh'
 │       │   └── openssl/
 │       │       ├── libcrypto.a
 │       │       └── libssl.a
-│       └── sqlcipher-webgl.zip     # WebGL archive
+│       ├── sqlcipher-webgl.zip     # WebGL archive
+│       ├── sqlcipher-amalgamation/ # Source bundle (unpacked)
+│       └── sqlcipher-amalgamation.zip # Source bundle archive
 ├── dist/                           # NPM package output
 │   ├── sqlcipher.cjs               # CommonJS module (Node.js)
 │   ├── sqlcipher.mjs               # ES module (browser)
@@ -170,7 +215,33 @@ Compiles SQLCipher into a static library for Unity 2022.3.22f WebGL:
 3. Outputs `libsqlcipher.a` + OpenSSL libs to `target/results/sqlcipher-webgl/`
 4. Creates `target/results/sqlcipher-webgl.zip`
 
-**Compilation Flags** (shared by both builds):
+### 4. libtomcrypt Amalgamation Stage (`build-libtomcrypt.sh`)
+
+Prepares a curated libtomcrypt amalgamation consumed by `build-amalgamation.sh`. This is a source-transform stage — no emcc is invoked.
+
+1. Downloads libtomcrypt 1.18.2 tarball (shared across runs)
+2. Enumerates the subset SQLCipher calls: AES, SHA1/2 family, HMAC, CBC/ECB modes, PBKDF2 (PKCS#5 alg2), PRNGs, registration/argchk helpers
+3. Inlines `aes_tab.c` into `aes.c` so the amalgamation has no side-file dependency
+4. Concatenates the subset into `target/build/libtomcrypt-amalg/libtomcrypt.c`
+5. Copies the 13 upstream headers to `target/build/libtomcrypt-amalg/headers/`
+6. Smoke-tests the result compiles cleanly with host `cc`
+
+Unrelated algorithms (Blowfish, Camellia, Khazad, MDx, RIPEMD, etc.) are intentionally omitted — they collide on static symbols (T-tables, per-algo `F`/`G` macros) when amalgamated, and SQLCipher never touches them.
+
+### 5. Unity Source Bundle (`build-amalgamation.sh`)
+
+Assembles the SQLCipher + libtomcrypt **source** bundle consumable by Unity's own emcc, so the same output works across Unity versions without ABI pinning.
+
+1. Asserts `build-libtomcrypt.sh` has been run (its output is in `target/build/libtomcrypt-amalg/`)
+2. Builds the SQLCipher amalgamation (`sqlite3.c` + `sqlite3.h`) via the standard `./configure && make sqlite3.c` flow — still no emcc
+3. Patches `sqlite3.c` to activate the libtomcrypt provider and disable OpenSSL/NSS/CC
+4. Copies the prebuilt `libtomcrypt.c` and headers alongside
+5. Prepends the SQLCipher/SQLite `#define` block directly to the top of the bundled `sqlite3.c` so no `-D` flags are ever needed at compile time
+6. Rewrites `#include <tomcrypt.h>` (in sqlite3.c's crypto_libtomcrypt section) to `"tomcrypt.h"` so it resolves from the plugin's own directory without an `-I` path
+7. Flattens all libtomcrypt headers alongside `libtomcrypt.c` in the bundle root so quote-include lookups succeed out of the box
+8. Creates `target/results/sqlcipher-amalgamation.zip`
+
+**Compilation Flags** (shared by WASM and WebGL builds):
 
 - `SQLITE_HAS_CODEC` - Enable encryption
 - `SQLCIPHER_CRYPTO_OPENSSL` - Use OpenSSL crypto provider
@@ -183,6 +254,11 @@ Compiles SQLCipher into a static library for Unity 2022.3.22f WebGL:
 WebGL build adds:
 - `SQLITE_ENABLE_SNAPSHOT` - Database snapshot support
 - `SQLITE_ENABLE_COLUMN_METADATA` - Column metadata API
+
+Amalgamation bundle substitutes the OpenSSL provider with libtomcrypt:
+- `SQLCIPHER_CRYPTO_LIBTOMCRYPT` replaces `SQLCIPHER_CRYPTO_OPENSSL`
+- `LTC_SOURCE` enables libtomcrypt internal symbols
+- every flag is prepended directly into `sqlite3.c` / `libtomcrypt.c` at bundle assembly time — no external `-D` or force-include header needed
 
 ## Usage
 

@@ -52,6 +52,7 @@ jobs:
         run: |
           nix develop --command bash -c "./build-openssl.sh && ./build-wasm.sh"
           nix develop '.#webgl' --command bash -c "./build-openssl.sh && ./build-webgl.sh"
+          nix develop --command bash -c "./build-libtomcrypt.sh && ./build-amalgamation.sh"
           ls -lh dist/
           ls -lh target/results/
 
@@ -86,6 +87,10 @@ jobs:
       - name: Build WebGL - OpenSSL + SQLCipher
         run: |
           nix develop '.#webgl' --command bash -c "./build-openssl.sh && ./build-webgl.sh"
+
+      - name: Build Unity amalgamation - SQLCipher + libtomcrypt source bundle
+        run: |
+          nix develop --command bash -c "./build-libtomcrypt.sh && ./build-amalgamation.sh"
 
       - name: Prepare cross-platform test
         run: |
@@ -122,6 +127,7 @@ jobs:
         run: |
           nix develop --command bash -c "./build-openssl.sh && ./build-wasm.sh"
           nix develop '.#webgl' --command bash -c "./build-openssl.sh && ./build-webgl.sh"
+          nix develop --command bash -c "./build-libtomcrypt.sh && ./build-amalgamation.sh"
           ls -lh dist/
           ls -lh target/results/
 
@@ -136,6 +142,7 @@ jobs:
           du -h target/results/sqlcipher-wasm/sqlcipher.wasm | awk '{print "| sqlcipher.wasm | " $1 " |"}' >> $GITHUB_STEP_SUMMARY
           du -h target/results/sqlcipher-wasm.zip | awk '{print "| sqlcipher-wasm.zip | " $1 " |"}' >> $GITHUB_STEP_SUMMARY
           du -h target/results/sqlcipher-webgl.zip | awk '{print "| sqlcipher-webgl.zip | " $1 " |"}' >> $GITHUB_STEP_SUMMARY
+          du -h target/results/sqlcipher-amalgamation.zip | awk '{print "| sqlcipher-amalgamation.zip | " $1 " |"}' >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
 
           # Check if sizes are reasonable

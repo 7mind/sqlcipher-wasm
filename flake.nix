@@ -65,10 +65,12 @@
               echo "Node.js version: $(node --version)"
               echo ""
               echo "Available commands:"
-              echo "  ./build-openssl.sh  - Build OpenSSL for WASM"
-              echo "  ./build-wasm.sh     - Build sqlcipher CJS/ESM"
-              echo "  npm test            - Run tests"
-              echo "  npm run bench       - Run benchmarks"
+              echo "  ./build-openssl.sh      - Build OpenSSL for WASM"
+              echo "  ./build-wasm.sh         - Build sqlcipher CJS/ESM"
+              echo "  ./build-libtomcrypt.sh  - Stage libtomcrypt amalgamation (Unity source bundle)"
+              echo "  ./build-amalgamation.sh - Assemble SQLCipher + libtomcrypt source bundle"
+              echo "  npm test                - Run tests"
+              echo "  npm run bench           - Run benchmarks"
               echo ""
             '';
           };

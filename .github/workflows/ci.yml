@@ -55,6 +55,10 @@ jobs:
         run: |
           nix develop '.#webgl' --command bash -c "./build-openssl.sh && ./build-webgl.sh"
 
+      - name: Build Unity amalgamation - SQLCipher + libtomcrypt source bundle
+        run: |
+          nix develop --command bash -c "./build-libtomcrypt.sh && ./build-amalgamation.sh"
+
       - name: Prepare cross-platform test
         run: |
           nix develop --command bash -c "./tools/prepare-cross-platform-test.sh"
@@ -76,6 +80,7 @@ jobs:
           ls -lh target/results/
           test -f target/results/sqlcipher-wasm.zip
           test -f target/results/sqlcipher-webgl.zip
+          test -f target/results/sqlcipher-amalgamation.zip
 
       - name: Upload WASM archive
         uses: actions/upload-artifact@v4
@@ -89,6 +94,13 @@ jobs:
         with:
           name: sqlcipher-webgl
           path: target/results/sqlcipher-webgl.zip
+          retention-days: 30
+
+      - name: Upload Amalgamation archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: sqlcipher-amalgamation
+          path: target/results/sqlcipher-amalgamation.zip
           retention-days: 30
 
       - name: Upload test results
@@ -118,4 +130,5 @@ jobs:
           files: |
             target/results/sqlcipher-wasm.zip
             target/results/sqlcipher-webgl.zip
+            target/results/sqlcipher-amalgamation.zip
           generate_release_notes: true

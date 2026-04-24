@@ -32,21 +32,25 @@ setup_emscripten() {
     mkdir -p "$EM_CACHE" "$EMCC_BUILD_DIR" "$RESULTS_DIR"
 }
 
-# Patch SQLCipher amalgamation to use OpenSSL provider.
-# Disables libtomcrypt/NSS/CommonCrypto providers and removes
+# Patch SQLCipher amalgamation to activate a single crypto provider.
+# Disables all other providers by wrapping them in #if 0, and removes
 # .fini_array usage (unsupported in WASM).
-# Usage: patch_amalgamation <path-to-sqlite3.c>
+# Usage: patch_amalgamation <path-to-sqlite3.c> [keep-provider]
+#   keep-provider: OPENSSL (default) | LIBTOMCRYPT | NSS | CC
 patch_amalgamation() {
     local sqlite_c="$1"
+    local keep="${2:-OPENSSL}"
     assert_set "$sqlite_c" "patch_amalgamation: path to sqlite3.c required"
     test -f "$sqlite_c" || { echo -e "${RED}Error: $sqlite_c not found${NC}" >&2; exit 1; }
 
-    echo -e "${YELLOW}Patching $sqlite_c for OpenSSL...${NC}"
+    echo -e "${YELLOW}Patching $sqlite_c (keeping $keep provider)...${NC}"
 
-    # Disable each crypto provider (except OpenSSL) by wrapping in #if 0
-    for section in "LIBTOMCRYPT" "NSS" "CC"; do
+    # Disable each crypto provider except the selected one by wrapping in #if 0
+    for section in "OPENSSL" "LIBTOMCRYPT" "NSS" "CC"; do
+        [[ "$section" == "$keep" ]] && continue
         local label
         case "$section" in
+            OPENSSL)     label="crypto_openssl.c" ;;
             LIBTOMCRYPT) label="crypto_libtomcrypt.c" ;;
             NSS)         label="crypto_nss.c" ;;
             CC)          label="crypto_cc.c" ;;
@@ -59,7 +63,7 @@ patch_amalgamation() {
         if [ -n "$start" ] && [ -n "$end" ]; then
             echo "  Disabling $section provider (lines $start-$end)"
             sed "${start}i\\
-#if 0 /* DISABLED - using OpenSSL */
+#if 0 /* DISABLED - using $keep */
 " "$sqlite_c" > "$sqlite_c.tmp" && mv "$sqlite_c.tmp" "$sqlite_c"
             end=$((end + 1))
             sed "${end}a\\
