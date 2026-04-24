@@ -121,6 +121,9 @@ echo -e "${YELLOW}Assembling bundle (flat, drop-in layout)...${NC}"
 #define SQLITE_EXTRA_INIT sqlcipher_extra_init
 #define SQLITE_EXTRA_SHUTDOWN sqlcipher_extra_shutdown
 #define SQLCIPHER_OMIT_LOG_DEVICE 1
+/* Skip mlock()/munlock() — wasm has no swap so page-locking is a no-op that
+ * emscripten logs a noisy "unsupported syscall: __syscall_mlock" warning for. */
+#define OMIT_MEMLOCK 1
 
 EOF
     # SQLCipher's crypto_libtomcrypt.c uses `#include <tomcrypt.h>` inside
