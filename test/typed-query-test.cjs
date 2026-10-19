@@ -101,6 +101,75 @@ function checkTypedQueries(sqlite) {
     }
 }
 
+function checkHeapCopies(sqlite) {
+    const module = sqlite.module;
+    assert(module.HEAPU8 instanceof Uint8Array, 'HEAPU8 must expose the current native heap');
+    for (const name of ['cwrap', 'ccall', 'setValue', 'getValue', 'UTF8ToString', 'stringToUTF8',
+        'lengthBytesUTF8', 'allocateUTF8']) assert.equal(typeof module[name], 'function');
+    assert.equal(typeof module.FS.readFile, 'function');
+    const db = sqlite.open();
+    const pattern = Uint8Array.from({ length: 256 }, (_, index) => index);
+    const hex = Buffer.from(pattern).toString('hex');
+    const sql = 'SELECT payload AS value FROM heap_copies UNION ALL SELECT payload FROM heap_copies';
+    const originalGetValue = module.getValue;
+    let pointerReads = 0;
+    module.getValue = (pointer, type) => {
+        assert.notEqual(type, 'i8', 'Typed decoding must not read individual bytes');
+        pointerReads++;
+        return originalGetValue(pointer, type);
+    };
+    let retained;
+    try {
+        db.exec(`CREATE TABLE heap_copies (payload); INSERT INTO heap_copies VALUES (x'${hex}')`);
+        retained = db.queryTyped(sql);
+        assert.deepEqual(retained.map(row => row.value.value), [pattern, pattern]);
+        assert.notEqual(retained[0].value.value.buffer, retained[1].value.value.buffer);
+        assert.notEqual(retained[0].value.value.buffer, module.HEAPU8.buffer);
+        retained[0].value.value[0] = 99;
+        assert.deepEqual(db.queryTyped(sql)[0].value.value, pattern);
+        assert.deepEqual(db.queryTyped("SELECT CAST(x'ff61c328' AS TEXT) AS value, '' AS empty, x'' AS blob, NULL AS missing"),
+            [{ value: { type: 'string', value: '\uFFFDa\uFFFD(' }, empty: { type: 'string', value: '' },
+                blob: { type: 'blob', value: new Uint8Array(0) }, missing: { type: 'null', value: null } }]);
+
+        const previousHeap = module.HEAPU8;
+        const previousLength = previousHeap.byteLength;
+        const originalColumnBytes = module._sqlite3_column_bytes;
+        let allocation = 0;
+        module._sqlite3_column_bytes = (statement, column) => {
+            const length = originalColumnBytes(statement, column);
+            allocation = module._malloc(previousLength);
+            assert.notEqual(allocation, 0);
+            return length;
+        };
+        try {
+            assert.deepEqual(db.queryTyped(`SELECT x'${hex}' AS value`)[0].value.value, pattern);
+            assert.notEqual(module.HEAPU8.buffer, previousHeap.buffer);
+            assert(module.HEAPU8.byteLength > previousLength);
+        } finally {
+            module._sqlite3_column_bytes = originalColumnBytes;
+            if (allocation) module._free(allocation);
+        }
+        const beforeQuery = module.HEAPU8;
+        const growthBytes = beforeQuery.byteLength;
+        const grown = db.queryTyped(`SELECT zeroblob(${growthBytes}) AS value`)[0].value.value;
+        assert.notEqual(module.HEAPU8.buffer, beforeQuery.buffer);
+        assert(module.HEAPU8.byteLength > growthBytes);
+        assert.equal(grown.length, growthBytes);
+        assert(grown.every(byte => byte === 0));
+        assert.notEqual(grown.buffer, module.HEAPU8.buffer);
+        assert.deepEqual(db.queryTyped(sql)[0].value.value, pattern);
+        assert.deepEqual(retained[1].value.value, pattern);
+        assert.equal(retained[0].value.value[0], 99);
+        assert(pointerReads > 0, 'Statement pointer reads must remain available');
+        console.log(`Heap growth: ${previousLength} -> ${growthBytes} -> ${module.HEAPU8.byteLength}`);
+    } finally {
+        module.getValue = originalGetValue;
+        db.close();
+    }
+    assert.deepEqual(retained[1].value.value, pattern);
+    assert.equal(retained[0].value.value[0], 99);
+}
+
 function checkBindings(sqlite) {
     const db = sqlite.open();
     try {
@@ -166,7 +235,7 @@ async function main() {
     const results = [];
     for (const [name, sqlite] of [['CommonJS', commonjs], ['ESM', esm]]) {
         for (const [label, check] of [['typed results', checkTypedQueries], ['parameter binding/lifetime', checkBindings],
-            ['NULL parameter binding', checkNullBindings]]) {
+            ['NULL parameter binding', checkNullBindings], ['heap copies and growth', checkHeapCopies]]) {
             try {
                 const result = check(sqlite);
                 if (label === 'typed results') results.push(result);

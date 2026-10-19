@@ -69,7 +69,7 @@ EMCC_FLAGS_COMMON=(
     "-sSTACK_SIZE=512KB"
 
     # Export settings
-    "-sEXPORTED_RUNTIME_METHODS=FS,cwrap,ccall,setValue,getValue,UTF8ToString,stringToUTF8,lengthBytesUTF8,allocateUTF8"
+    "-sEXPORTED_RUNTIME_METHODS=FS,cwrap,ccall,setValue,getValue,UTF8ToString,stringToUTF8,lengthBytesUTF8,allocateUTF8,HEAPU8"
     "-sEXPORTED_FUNCTIONS=_malloc,_free,_sqlite3_open,_sqlite3_open_v2,_sqlite3_close,_sqlite3_exec,_sqlite3_prepare_v2,_sqlite3_step,_sqlite3_finalize,_sqlite3_reset,_sqlite3_clear_bindings,_sqlite3_column_count,_sqlite3_column_name,_sqlite3_column_type,_sqlite3_column_blob,_sqlite3_column_bytes,_sqlite3_column_text,_sqlite3_column_int,_sqlite3_column_int64,_sqlite3_column_double,_sqlite3_bind_blob,_sqlite3_bind_text,_sqlite3_bind_int,_sqlite3_bind_int64,_sqlite3_bind_double,_sqlite3_bind_null,_sqlite3_bind_parameter_count,_sqlite3_bind_parameter_name,_sqlite3_bind_parameter_index,_sqlite3_errmsg,_sqlite3_errcode,_sqlite3_extended_errcode,_sqlite3_changes,_sqlite3_total_changes,_sqlite3_last_insert_rowid,_sqlite3_db_filename,_sqlite3_get_autocommit,_sqlite3_busy_timeout"
 
     # Optimizations

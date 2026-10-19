@@ -462,7 +462,17 @@ Get number of rows changed by last statement.
 
 The CommonJS wrapper provides `sqlite.getModule()` for access to Emscripten `FS` and exported SQLite C functions. Use it to import or export database bytes, or to manage prepared statements directly. The browser wrapper exposes the initialized module through `sqlite.module` instead.
 
-Within each wrapper, both query methods share the prepare/bind/step/finalize path and differ only in row decoding. The typed reader inspects `sqlite3_column_type` for every cell, reads integers through `sqlite3_column_int64`, and copies text/BLOB bytes using `sqlite3_column_bytes` and `getValue`; it does not require an exported `HEAPU8`. Statement and temporary SQL buffers are released on success or failure. Bound text uses SQLite's transient-copy binding, and its temporary buffer is freed immediately.
+Within each wrapper, both query methods share the prepare/bind/step/finalize path and differ only in row decoding. The typed reader inspects `sqlite3_column_type` for every cell, reads integers through `sqlite3_column_int64`, and copies text/BLOB bytes with `HEAPU8.slice` after obtaining the native pointer and byte count. Statement and temporary SQL buffers are released on success or failure. Bound text uses SQLite's transient-copy binding, and its temporary buffer is freed immediately.
+
+`module.HEAPU8` exposes a mutable `Uint8Array` view of raw WebAssembly memory. Native calls can grow memory and replace this view: obtain pointers and lengths first, then read the current `module.HEAPU8`. Do not retain heap views across native calls. Use `slice(pointer, pointer + length)` for an owned copy; `subarray` aliases native memory, whose allocation lifetime the caller must manage. Raw writes can corrupt SQLite state and bypass the wrapper's ownership guarantees; this access provides no security boundary.
+
+For example, after obtaining a valid native pointer and byte count:
+
+```javascript
+const bytes = sqlite.module.HEAPU8.slice(pointer, pointer + length);
+```
+
+Unlike raw heap views, `queryTyped` BLOB values own their buffers and remain valid after row stepping, statement finalization, memory growth, later queries, and database closure. Mutating a returned BLOB does not alter the database or other results.
 
 ### Filesystem Lifetime
 

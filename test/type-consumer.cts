@@ -1,5 +1,5 @@
 import { initSQLite } from '@7mind.io/sqlcipher-wasm';
-import type { SQLiteRow, SQLiteTypedRow, SQLiteTypedValue } from '@7mind.io/sqlcipher-wasm';
+import type { EmscriptenModule, SQLiteRow, SQLiteTypedRow, SQLiteTypedValue } from '@7mind.io/sqlcipher-wasm';
 
 function formatValue(value: SQLiteTypedValue): string {
     switch (value.type) {
@@ -14,6 +14,7 @@ function formatValue(value: SQLiteTypedValue): string {
 }
 
 type Rejects<Value extends false> = Value;
+type MissingHeap = Rejects<Omit<EmscriptenModule, 'HEAPU8'> extends EmscriptenModule ? true : false>;
 type InvalidNumber = Rejects<{ type: 'number'; value: string } extends SQLiteTypedValue ? true : false>;
 type InvalidBigint = Rejects<{ type: 'bigint'; value: number } extends SQLiteTypedValue ? true : false>;
 type InvalidString = Rejects<{ type: 'string'; value: null } extends SQLiteTypedValue ? true : false>;
@@ -24,6 +25,8 @@ type InvalidTag = Rejects<{ type: 'integer'; value: number } extends SQLiteTyped
 
 async function main(): Promise<void> {
     const sqlite = await initSQLite();
+    const heap: Uint8Array = sqlite.getModule().HEAPU8;
+    console.log(heap.byteLength);
     const db = sqlite.open();
     const legacy: SQLiteRow[] = db.query('SELECT 42 AS value');
     const typed: SQLiteTypedRow[] = db.queryTyped('SELECT ? AS value', [42]);

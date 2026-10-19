@@ -1,4 +1,5 @@
 export interface EmscriptenModule {
+    HEAPU8: Uint8Array;
     FS: {
         readFile(path: string): Uint8Array;
         writeFile(path: string, data: Uint8Array | string): void;
