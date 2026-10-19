@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-set -e
+set -eo pipefail
 source "$(dirname "$0")/lib.sh"
 
 # Produce a curated libtomcrypt amalgamation for the SQLCipher source bundle.
@@ -43,7 +43,7 @@ pushd "$SRC_DIR" > /dev/null
 
 # Curate the subset SQLCipher's crypto_libtomcrypt.c actually calls:
 #   AES cipher, SHA1 + SHA2 family, HMAC, CBC/ECB modes, PBKDF2 (PKCS#5 alg2),
-#   PRNGs, and the misc/crypt registration + argchk helpers.
+#   Fortuna, native entropy, and individual registration + argchk helpers.
 # Unrelated algorithms (Blowfish, Camellia, Khazad, Kseed, MDx, RIPEMD, etc.)
 # are excluded — they collide on static symbols (T-tables, per-algo `F`/`G`
 # macros) when amalgamated, and SQLCipher never touches them.
@@ -57,9 +57,10 @@ LTC_SUBSET_FILES=$({
     find src/modes/cbc        -name '*.c'
     find src/modes/ecb        -name '*.c'
     find src/misc/pkcs5       -name '*.c'
-    find src/misc/crypt       -name '*.c'
+    find src/misc/crypt       -name '*.c' ! -name 'crypt_register_all_*.c'
     find src/misc -maxdepth 1 -name '*.c'
-    find src/prngs            -name '*.c'
+    echo src/prngs/fortuna.c
+    echo src/prngs/rng_get_bytes.c
 } | sort -u)
 
 # Macro names that libtomcrypt's sha2 / md / ripemd family files #define at
@@ -74,7 +75,7 @@ echo "Writing amalgamation to $LTC_AMALG..."
 {
     echo "/* libtomcrypt ${LIBTOMCRYPT_VERSION} — curated amalgamation for SQLCipher."
     echo " * Contents: AES, SHA1/224/256/384/512, HMAC, CBC/ECB modes,"
-    echo " * PBKDF2 (PKCS#5 alg2), PRNGs, and misc registration/argchk helpers."
+    echo " * PBKDF2 (PKCS#5 alg2), Fortuna, native entropy, and registration/argchk helpers."
     echo " * Other libtomcrypt algorithms (Blowfish, Camellia, Khazad, MDx, etc)"
     echo " * are intentionally omitted — SQLCipher's crypto_libtomcrypt.c does"
     echo " * not reference them, and their static symbols collide across files."
@@ -119,15 +120,15 @@ test -f LICENSE && cp LICENSE "$INSTALL_DIR/"
 
 popd > /dev/null
 
-# Smoke test: the curated amalgamation must compile cleanly as a host TU.
-# If this fails the bundle would break too — catch it here, not in Unity.
-echo "Smoke-testing amalgamation compiles cleanly..."
-if ! cc -c -I"$INSTALL_DIR/headers" -o /dev/null "$LTC_AMALG" 2>"$INSTALL_DIR/compile.log"; then
-    echo -e "${RED}libtomcrypt amalgamation failed to compile:${NC}"
+# Smoke test: ordinary host linking must resolve every amalgamation reference.
+# Compile-only checks miss references to implementations omitted from the bundle.
+echo "Smoke-testing amalgamation compiles and links..."
+if ! printf 'int main(void) { return 0; }\n' | cc -I"$INSTALL_DIR/headers" -x c - "$LTC_AMALG" -lm -o "$INSTALL_DIR/link-smoke" 2>"$INSTALL_DIR/compile.log"; then
+    echo -e "${RED}libtomcrypt amalgamation failed to compile or link:${NC}"
     head -40 "$INSTALL_DIR/compile.log"
     exit 1
 fi
-rm -f "$INSTALL_DIR/compile.log"
+rm -f "$INSTALL_DIR/compile.log" "$INSTALL_DIR/link-smoke"
 
 echo ""
 echo "libtomcrypt amalgamation built successfully!"

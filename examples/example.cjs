@@ -3,18 +3,17 @@
 /**
  * Simple example of using SQLite WASM
  *
- * Run: node example.cjs
+ * Run: node examples/example.cjs
  */
 
-const { join } = require('path');
-const { initSQLite } = require('./lib/sqlite-api.cjs');
+const { initSQLite } = require('../lib/sqlite-api.cjs');
 
 async function main() {
     console.log('SQLite WASM Example\n');
 
     // Initialize SQLite
     console.log('1. Initializing SQLite...');
-    const sqlite = await initSQLite(join(__dirname, 'dist', 'sqlcipher.js'));
+    const sqlite = await initSQLite();
     console.log('   ✓ Done\n');
 
     // Open database
@@ -57,16 +56,16 @@ async function main() {
 
     // Query highly rated books
     console.log('6. Finding highly rated books (rating >= 4.5)...');
-    const topBooks = db.query('SELECT title, author, rating FROM books WHERE rating >= 4.5 ORDER BY rating DESC');
+    const topBooks = db.queryTyped('SELECT title, author, rating FROM books WHERE rating >= ?', [4.5]);
     console.log('   Results:');
     topBooks.forEach(book => {
-        console.log(`   - "${book.title}" by ${book.author} - ${book.rating}/5`);
+        console.log(`   - "${book.title.value}" by ${book.author.value} - ${book.rating.value.toFixed(1)}/5`);
     });
     console.log();
 
     // Get statistics
     console.log('7. Calculating statistics...');
-    const stats = db.query(`
+    const stats = db.queryTyped(`
         SELECT
             COUNT(*) as total_books,
             AVG(rating) as avg_rating,
@@ -74,11 +73,11 @@ async function main() {
             MIN(year) as oldest_year
         FROM books
     `);
-    const s = stats[0];
+    const summary = stats[0];
     console.log('   Results:');
-    console.log(`   Total books: ${s.total_books}`);
-    console.log(`   Average rating: ${parseFloat(s.avg_rating).toFixed(2)}/5`);
-    console.log(`   Date range: ${s.oldest_year} - ${s.newest_year}`);
+    console.log(`   Total books: ${summary.total_books.value}`);
+    console.log(`   Average rating: ${summary.avg_rating.value.toFixed(2)}/5`);
+    console.log(`   Date range: ${summary.oldest_year.value} - ${summary.newest_year.value}`);
     console.log();
 
     // Close database

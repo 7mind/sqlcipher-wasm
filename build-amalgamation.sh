@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 
-# Build a Unity-agnostic C source amalgamation of SQLCipher + libtomcrypt.
+# Build a C source amalgamation for non-pthread Unity WebGL consumers.
 #
 # Unlike build-webgl.sh, this script does NOT invoke emcc. It emits plain C
-# sources that Unity compiles in-tree with whichever emcc its editor version
-# happens to ship. That sidesteps the ABI problem we hit when linking a .a
+# sources that Unity compiles in-tree with its bundled emcc. Validate the
+# resulting application with that toolchain. This avoids linking a .a
 # built against emcc 3.1.10 into Unity 6000.4 (emcc 3.1.38) — which shows up
 # at runtime as `signature_mismatch:time` traps from libc signature drift.
 #
@@ -21,7 +21,7 @@
 #   ./build-libtomcrypt.sh
 #   ./build-amalgamation.sh
 
-set -e
+set -eo pipefail
 source "$(dirname "$0")/lib.sh"
 
 assert_set "$SQLCIPHER_SRC" "SQLCIPHER_SRC not set. Make sure you're in the nix environment (nix develop)."
@@ -36,7 +36,7 @@ BUILD_DIR="${BUILD_BASE}/amalgamation"
 BUNDLE_DIR="${RESULTS_DIR}/sqlcipher-amalgamation"
 BUNDLE_ZIP="${RESULTS_DIR}/sqlcipher-amalgamation.zip"
 
-echo -e "${GREEN}Building SQLCipher source amalgamation (Unity-agnostic, no emcc pin needed)${NC}"
+echo -e "${GREEN}Building SQLCipher source amalgamation (non-pthread Unity WebGL)${NC}"
 echo "========================================"
 
 rm -rf "$BUILD_DIR" "$BUNDLE_DIR" "$BUNDLE_ZIP"
@@ -66,8 +66,7 @@ patch_amalgamation sqlite3.c LIBTOMCRYPT
 popd > /dev/null
 
 # --- 2. Assemble flat drop-in bundle ---
-# Design goal: the bundle works in Unity with zero compile flags. To get
-# there:
+# Bundle SQLCipher defines and includes for non-pthread Unity consumers:
 #   (a) All compile defines that sqlite3.c needs (provider selection,
 #       SQLITE_ENABLE_* feature flags, etc.) are prepended directly into
 #       sqlite3.c itself, so no -D flags or force-include header are needed.
@@ -142,16 +141,30 @@ cp "$LTC_INSTALL/headers/"*.h "$BUNDLE_DIR/"
 test -f "$LTC_INSTALL/LICENSE" && cp "$LTC_INSTALL/LICENSE" "$BUNDLE_DIR/LICENSE_libtomcrypt"
 
 cat > "$BUNDLE_DIR/README.txt" <<EOF
-SQLCipher Source Bundle (Unity WebGL, any emcc)
-===============================================
+SQLCipher Source Bundle (non-pthread Unity WebGL)
+================================================
 
 Ships C sources instead of a prebuilt .a so Unity's bundled emcc compiles
-everything itself. Works across Unity versions (2022.3, 6000.x, future) with
-no toolchain pin, avoiding runtime "signature_mismatch:time" traps caused
-by libc ABI drift between emscripten versions.
+everything itself. This avoids a prebuilt archive's ABI dependency, but
+does not guarantee compatibility with a Unity version or toolchain.
+Validate the resulting application with the exact toolchain you use.
 
-All compile flags and include paths are baked in — drop the directory into
-Unity and the WebGL build compiles it with no plugin importer configuration.
+SQLCipher/SQLite defines and sibling includes are included in the bundle;
+no additional SQLCipher defines or include paths are required. The bundle
+does not configure Unity's threading settings.
+
+Threading limitation
+--------------------
+Maintained source validation covers non-pthread consumers only. The tested
+pthread-enabled source consumers (emcc 4.0.12 with -pthread) time out during
+SQLCipher initialization after 8 seconds. The non-pthread probe and a
+separate pthread create/join control complete successfully. This tested
+pthread configuration has not passed initialization. These results do not
+establish that other Unity configurations fail; validate each consuming
+application and toolchain.
+
+The baked SQLITE_THREADSAFE=1 configures SQLite mutex support; it does not enable
+Emscripten pthreads or establish working pthread-enabled initialization.
 
 Contents (flat layout — all files in one directory)
 ---------------------------------------------------
@@ -165,9 +178,12 @@ Contents (flat layout — all files in one directory)
 Unity integration
 -----------------
   1. Copy this whole directory to Assets/Plugins/WebGL/sqlcipher/
-  2. That's it. No compile flags, no include paths, no force-includes.
-     Unity's plugin importer picks up both .c files; at WebGL build time
-     emcc compiles them with every needed define already in the source.
+  2. Use a non-pthread WebGL build for the validated configuration.
+     Both .c files contain the required
+     SQLCipher configuration; no force-includes are needed.
+  3. Build and run the actual application with your Unity version and emcc.
+     Verify initialization, encrypted reads/writes, rekeying, and incorrect-key
+     rejection. Node.js wrapper tests do not validate a Unity application.
 
 If you need to toggle SQLCipher/SQLite features, edit the #define block at
 the top of sqlite3.c (search for "Compile-time configuration").

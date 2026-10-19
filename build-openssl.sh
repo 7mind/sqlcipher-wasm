@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-set -e
+set -eo pipefail
 source "$(dirname "$0")/lib.sh"
 
 # Build OpenSSL for WebAssembly using Emscripten

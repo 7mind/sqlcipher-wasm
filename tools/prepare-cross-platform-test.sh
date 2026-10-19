@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-set -e
+set -eo pipefail
 
 # Colors
 RED='\033[0;31m'
@@ -312,7 +312,7 @@ echo "  - /tmp/test-from-cpp.db          (SQLite database)"
 echo "  - test/cross-platform-db-test.cjs (JavaScript test with embedded DB)"
 echo
 echo -e "${YELLOW}To run the test:${NC}"
-echo "  npm run test:cross-platform"
+echo "  node test/cross-platform-db-test.cjs"
 echo
 echo -e "${YELLOW}What this proves:${NC}"
 echo "  ✓ C++ programs can create SQLite databases"

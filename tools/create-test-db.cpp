@@ -38,14 +38,13 @@ int main() {
     std::cout << "✓ Database opened successfully" << std::endl;
 
     // Set encryption key (SQLCipher)
-    // Using native SQLCipher v3 defaults (SHA1, 64000 iterations)
     rc = sqlite3_exec(db, ("PRAGMA key = '" + std::string(encryptionKey) + "'").c_str(), nullptr, nullptr, &errMsg);
     if (rc != SQLITE_OK) {
         std::cerr << "Failed to set encryption key: " << errMsg << std::endl;
         sqlite3_free(errMsg);
         return 1;
     }
-    std::cout << "✓ Encryption key set (using SQLCipher v3 defaults)" << std::endl;
+    std::cout << "✓ Encryption key set (using native SQLCipher defaults)" << std::endl;
 
     // Create table
     const char* createTableSQL = R"(

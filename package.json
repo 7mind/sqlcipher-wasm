@@ -5,11 +5,17 @@
   "type": "module",
   "main": "./lib/sqlite-api.cjs",
   "module": "./lib/sqlite-api.mjs",
-  "types": "./lib/sqlite-api.d.ts",
+  "types": "./lib/sqlite-api.d.cts",
   "exports": {
     ".": {
-      "import": "./lib/sqlite-api.mjs",
-      "require": "./lib/sqlite-api.cjs"
+      "import": {
+        "types": "./lib/sqlite-api.d.ts",
+        "default": "./lib/sqlite-api.mjs"
+      },
+      "require": {
+        "types": "./lib/sqlite-api.d.cts",
+        "default": "./lib/sqlite-api.cjs"
+      }
     },
     "./dist/sqlcipher.mjs": "./dist/sqlcipher.mjs",
     "./dist/sqlcipher.cjs": "./dist/sqlcipher.cjs"
@@ -18,10 +24,10 @@
     "dist/sqlcipher.mjs",
     "dist/sqlcipher.cjs",
     "dist/sqlcipher.wasm",
-    "dist/sqlcipher.d.ts",
     "lib/sqlite-api.mjs",
     "lib/sqlite-api.cjs",
     "lib/sqlite-api.d.ts",
+    "lib/sqlite-api.d.cts",
     "README.md",
     "LICENSE"
   ],

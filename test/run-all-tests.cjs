@@ -42,6 +42,11 @@ const testSuites = [
         description: 'Encryption, re-keying, and multi-db tests'
     },
     {
+        name: 'Typed Query Tests',
+        file: 'test/typed-query-test.cjs',
+        description: 'Runtime value types, buffer ownership, and CJS/ESM parity'
+    },
+    {
         name: 'Cross-Platform Tests',
         file: 'test/cross-platform-db-test.cjs',
         description: 'C++ → WASM encrypted database compatibility'

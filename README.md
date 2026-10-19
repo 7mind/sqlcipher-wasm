@@ -4,28 +4,27 @@
 [![CI/CD](https://github.com/7mind/sqlcipher-wasm/workflows/CI%2FCD/badge.svg)](https://github.com/7mind/sqlcipher-wasm/actions)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-A production-ready WebAssembly build of [SQLCipher](https://www.zetetic.net/sqlcipher/) with **real OpenSSL-based encryption**, high-level JavaScript API, and comprehensive test coverage.
+Builds [SQLCipher](https://www.zetetic.net/sqlcipher/) for Node.js, browsers, and Unity WebGL. Standalone WASM and prebuilt Unity libraries use OpenSSL; the Unity source bundle uses libtomcrypt and compiles with Unity's own toolchain.
 
 ## Features
 
-- **Real Encryption**: Full SQLCipher encryption using OpenSSL 3.3.2 compiled to WebAssembly
-- **High-Level API**: Easy-to-use JavaScript wrapper with automatic memory management
-- **Cross-Platform**: Works in Node.js and browsers, compatible with native SQLCipher databases
-- **Comprehensive Tests**: 5 test suites covering all functionality including cross-platform compatibility
+- **Encryption**: SQLCipher v4.9.0 with OpenSSL 3.3.2 or libtomcrypt 1.18.2
+- **JavaScript API**: CommonJS initialization for Node.js and ES module initialization for browsers
+- **Database Portability**: Import and export database bytes through the Emscripten virtual filesystem
+- **Tests**: 6 Node.js test suites covering SQL operations, virtual files, encryption, and native-to-WASM compatibility
 - **Nix Flake Environment**: Reproducible development environment
-- **Type Definitions**: TypeScript definitions included
-- **Benchmarked**: Performance benchmarks for critical operations
+- **Benchmarks**: Allocation, JavaScript string and buffer operations, and C function call overhead
 
 ## Security
 
-This build uses **real cryptographic primitives** from OpenSSL 3.3.2, providing:
+Both crypto providers use SQLCipher v4 defaults unless configured through SQLCipher PRAGMAs:
 
 - **AES-256-CBC** encryption
-- **PBKDF2-HMAC-SHA1** key derivation (64,000 iterations by default)
-- **HMAC-SHA1** for authentication
-- **Cryptographically secure** random number generation
+- **PBKDF2-HMAC-SHA512** key derivation (256,000 iterations by default)
+- **HMAC-SHA512** for page authentication
+- **4,096-byte** database pages
 
-Databases created with this library are **fully compatible** with native SQLCipher (C++ version).
+Native and WASM databases require matching SQLCipher format parameters, including page size, key derivation, and HMAC settings. See [Cross-Platform Compatibility](#cross-platform-compatibility) for file transfer and validation.
 
 ## Prerequisites
 
@@ -46,19 +45,25 @@ Three build targets are available, all using SQLCipher v4.9.0:
 
 | Target | Script(s) | Shell | Emscripten | Crypto | Output |
 |--------|-----------|-------|------------|--------|--------|
-| **WASM** (Node.js/Browser) | `build-wasm.sh` | `nix develop` | Latest (in-tree) | OpenSSL 3.3.2 | `dist/` + `target/results/sqlcipher-wasm.zip` |
-| **WebGL** (Unity 2022.3.22f) | `build-webgl.sh` | `nix develop .#webgl` | 3.1.10 (pinned) | OpenSSL 3.3.2 | `target/results/sqlcipher-webgl.zip` |
-| **Amalgamation** (Unity, any emcc) | `build-libtomcrypt.sh` → `build-amalgamation.sh` | `nix develop` | n/a (source bundle) | libtomcrypt 1.18.2 | `target/results/sqlcipher-amalgamation.zip` |
+| **WASM** (Node.js/Browser) | `build-openssl.sh` → `build-wasm.sh` | `nix develop` | 4.0.12 (pinned) | OpenSSL 3.3.2 | `dist/` + `target/results/sqlcipher-wasm.zip` |
+| **WebGL** (Unity 2022.3.22f) | `build-openssl.sh` → `build-webgl.sh` | `nix develop .#webgl` | 3.1.10 (pinned) | OpenSSL 3.3.2 | `target/results/sqlcipher-webgl.zip` |
+| **Amalgamation** (non-pthread Unity WebGL) | `build-libtomcrypt.sh` → `build-amalgamation.sh` | `nix develop` | consumer toolchain (source bundle) | libtomcrypt 1.18.2 | `target/results/sqlcipher-amalgamation.zip` |
 
-The WebGL build additionally enables `SQLITE_ENABLE_SNAPSHOT` and `SQLITE_ENABLE_COLUMN_METADATA`.
+The Unity builds enable additional SQLite features, including `SQLITE_ENABLE_SNAPSHOT` and `SQLITE_ENABLE_COLUMN_METADATA`.
 
-### When to use the Amalgamation bundle
+### Choosing a Unity build
 
-The **WebGL** target above emits a prebuilt `libsqlcipher.a` that must ABI-match the emcc Unity ships with. That's fine for a single pinned Unity version but breaks across upgrades: a `.a` built with emcc 3.1.10 (Unity 2022.3.22f) linked into Unity 6000.4 (emcc 3.1.38) traps at runtime with `signature_mismatch:time` — libc signatures like `time_t` drifted between emcc versions.
+The **WebGL** target emits `libsqlcipher.a` and OpenSSL static libraries built with emcc 3.1.10 for Unity 2022.3.22f. The consuming Unity toolchain must match the libraries' ABI.
 
-The **Amalgamation** target sidesteps this entirely: it ships portable C source (one `sqlite3.c`, one `libtomcrypt.c`, and a small set of headers) that Unity's own bundled emcc compiles in-tree, so the same bundle works across 2022.3, 6000.x, and future Unity versions with no toolchain pin.
+The **Amalgamation** target ships C source (`sqlite3.c`, `libtomcrypt.c`, and headers) for Unity's bundled emcc to compile. Maintained source-bundle validation covers non-pthread consumers only. The repository does not pin the consumer's emcc; validate the resulting application with your actual Unity version and toolchain rather than assuming cross-version compatibility.
 
-Crypto is libtomcrypt instead of OpenSSL because OpenSSL has no usable source-drop path (Perl-driven Configure, generated `opensslconf.h`, hundreds of per-file `-D` flags). libtomcrypt amalgamates cleanly into a single `.c` once curated to the subset SQLCipher actually calls (AES, SHA1/2, HMAC, CBC/ECB, PBKDF2, PRNG, registration helpers).
+The source bundle uses a curated libtomcrypt amalgamation containing AES, SHA1/2, HMAC, CBC/ECB, PBKDF2, PRNGs, and registration helpers. Compile-time configuration and quoted sibling includes are included in the bundle, so Unity does not need an OpenSSL configuration step or custom include paths.
+
+### Source bundle threading limitation
+
+The tested pthread-enabled source consumers fail to complete SQLCipher initialization: with emcc 4.0.12 and `-pthread`, an initialization probe times out after 8 seconds. The same probe without `-pthread` and a separate pthread create/join control complete successfully. This tested pthread configuration has not passed initialization. These results do not establish that other Unity configurations fail; validate each consuming application and toolchain.
+
+The baked `SQLITE_THREADSAFE=1` configures SQLite mutex support; it does not enable Emscripten pthreads or establish working pthread-enabled initialization. For a non-pthread application, validate initialization, encrypted reads/writes, rekeying, and incorrect-key rejection with the exact consuming toolchain. The Node.js wrapper suites do not validate a Unity application.
 
 ## Quick Start
 
@@ -70,6 +75,7 @@ Interactive:
 nix develop
 ./build-openssl.sh
 ./build-wasm.sh
+./tools/prepare-cross-platform-test.sh
 npm test
 ```
 
@@ -95,7 +101,7 @@ One-liner:
 nix develop .#webgl --command bash -c './build-openssl.sh && ./build-webgl.sh'
 ```
 
-### Amalgamation (Unity, any emcc — source bundle)
+### Amalgamation (non-pthread Unity WebGL — source bundle)
 
 Interactive:
 
@@ -122,7 +128,7 @@ LICENSE_libtomcrypt    libtomcrypt license
 README.txt             Unity integration notes
 ```
 
-Copy the directory into `Assets/Plugins/WebGL/sqlcipher/` — that's it. No plugin importer compile flags, no include paths, no force-includes. Every `-D` and `-I` that would normally be needed is either prepended into `sqlite3.c` itself or obviated by the flat layout (quoted sibling includes resolve via clang's current-file-directory search). The same bundle compiles unchanged on Unity 2022.3 (emcc 3.1.10), Unity 6000.4 (emcc 3.1.38), and whatever emcc the next Unity ships.
+Copy the entire directory into `Assets/Plugins/WebGL/sqlcipher/` for a non-pthread WebGL build. SQLCipher/SQLite defines are prepended to the C sources, and headers use quoted sibling includes; no additional SQLCipher defines, include paths, or force-includes are required. This does not configure Unity's threading settings. Build and test the actual Unity application after integration; see [Source bundle threading limitation](#source-bundle-threading-limitation).
 
 ## Project Structure
 
@@ -135,16 +141,17 @@ Copy the directory into `Assets/Plugins/WebGL/sqlcipher/` — that's it. No plug
 ├── build-wasm.sh                   # SQLCipher WASM build (CJS/ESM)
 ├── build-webgl.sh                  # SQLCipher static lib build (Unity WebGL, emcc-pinned)
 ├── build-libtomcrypt.sh            # libtomcrypt curated-amalgamation stage (no emcc)
-├── build-amalgamation.sh           # SQLCipher + libtomcrypt source bundle (Unity, any emcc)
+├── build-amalgamation.sh           # SQLCipher + libtomcrypt source bundle (non-pthread Unity WebGL)
 ├── package.json                    # NPM package configuration
 ├── target/
 │   ├── build/                      # Intermediate build artifacts
-│   │   ├── openssl-3.3.2/          # OpenSSL source (shared)
+│   │   ├── openssl-3.3.2.tar.gz    # OpenSSL source archive (shared)
 │   │   ├── libtomcrypt-1.18.2/     # libtomcrypt source (shared)
 │   │   ├── libtomcrypt-amalg/      # Curated libtomcrypt amalgamation output
 │   │   ├── amalgamation/           # SQLCipher amalgamation working dir
 │   │   └── emcc-<version>/         # Per-emscripten-version builds
 │   │       ├── openssl-wasm/       # Compiled OpenSSL
+│   │       ├── openssl-3.3.2/      # OpenSSL source configured for this emcc
 │   │       ├── sqlcipher-wasm/     # WASM build working dir
 │   │       └── sqlcipher-webgl/    # WebGL build working dir
 │   └── results/                    # Final build outputs
@@ -163,7 +170,10 @@ Copy the directory into `Assets/Plugins/WebGL/sqlcipher/` — that's it. No plug
 │   ├── sqlcipher.mjs               # ES module (browser)
 │   └── sqlcipher.wasm              # WebAssembly binary
 ├── lib/
-│   └── sqlite-api.cjs              # High-level JavaScript API
+│   ├── sqlite-api.cjs              # Node.js CommonJS API
+│   ├── sqlite-api.mjs              # Browser ES module API
+│   ├── sqlite-api.d.ts             # Browser TypeScript declarations
+│   └── sqlite-api.d.cts            # CommonJS TypeScript declarations
 ├── test/
 │   ├── run-all-tests.cjs           # Test suite runner
 │   ├── test.cjs                    # Core functionality tests
@@ -175,15 +185,14 @@ Copy the directory into `Assets/Plugins/WebGL/sqlcipher/` — that's it. No plug
 │   └── benchmark.cjs               # Performance benchmarks
 ├── examples/
 │   └── example.cjs                 # Usage examples
-├── tools/
-│   └── prepare-cross-platform-test.sh
-└── docs/
-    └── archive/
+└── tools/
+    ├── create-test-db.cpp          # Native encrypted database generator
+    └── prepare-cross-platform-test.sh
 ```
 
 ## Build Process
 
-All build scripts source `lib.sh` which auto-detects the emscripten version and sets up versioned build/cache directories. This allows the default and webgl shells to coexist without conflicts.
+All build scripts source `lib.sh` for paths, assertions, and crypto-provider patching. The WASM, WebGL, and OpenSSL scripts call `setup_emscripten` to detect the emcc version and select versioned build/cache directories. The libtomcrypt and source-bundle scripts do not invoke emcc.
 
 ### 1. OpenSSL Build (`build-openssl.sh`)
 
@@ -230,7 +239,7 @@ Unrelated algorithms (Blowfish, Camellia, Khazad, MDx, RIPEMD, etc.) are intenti
 
 ### 5. Unity Source Bundle (`build-amalgamation.sh`)
 
-Assembles the SQLCipher + libtomcrypt **source** bundle consumable by Unity's own emcc, so the same output works across Unity versions without ABI pinning.
+Assembles the SQLCipher + libtomcrypt **source** bundle for non-pthread consumers using Unity's own emcc. Compiling source avoids a prebuilt archive's ABI dependency, but does not guarantee compatibility with a Unity version or toolchain; validate the resulting application.
 
 1. Asserts `build-libtomcrypt.sh` has been run (its output is in `target/build/libtomcrypt-amalg/`)
 2. Builds the SQLCipher amalgamation (`sqlite3.c` + `sqlite3.h`) via the standard `./configure && make sqlite3.c` flow — still no emcc
@@ -246,7 +255,7 @@ Assembles the SQLCipher + libtomcrypt **source** bundle consumable by Unity's ow
 - `SQLITE_HAS_CODEC` - Enable encryption
 - `SQLCIPHER_CRYPTO_OPENSSL` - Use OpenSSL crypto provider
 - `SQLITE_TEMP_STORE=2` - Use memory for temporary storage
-- `SQLITE_THREADSAFE=1` - Thread-safe (required by SQLCipher v4.9.0)
+- `SQLITE_THREADSAFE=1` - SQLite mutex configuration; does not enable consumer pthreads or establish pthread-enabled source support
 - `SQLITE_ENABLE_FTS5` - Full-text search
 - `SQLITE_ENABLE_RTREE` - Spatial indexing
 - `SQLITE_ENABLE_JSON1` - JSON support
@@ -265,37 +274,51 @@ Amalgamation bundle substitutes the OpenSSL provider with libtomcrypt:
 ### Basic Example
 
 ```javascript
-const { SQLiteAPI } = require('./lib/sqlite-api.cjs');
-const initSqlcipher = require('./dist/sqlcipher.js');
+const { initSQLite } = require('@7mind.io/sqlcipher-wasm');
 
 async function main() {
-    // Initialize the WASM module
-    const Module = await initSqlcipher();
-    const sqlite = new SQLiteAPI(Module);
+    const sqlite = await initSQLite();
 
-    // Create an encrypted database
     const db = sqlite.open('/mydb.db', 'my-secret-password');
 
-    // Create a table
     db.exec('CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT, email TEXT)');
 
-    // Insert data
-    db.exec(
+    db.query(
         'INSERT INTO users (name, email) VALUES (?, ?)',
         ['Alice', 'alice@example.com']
     );
 
-    // Query data
     const users = db.query('SELECT * FROM users WHERE name = ?', ['Alice']);
     console.log(users);
-    // => [{ id: 1, name: 'Alice', email: 'alice@example.com' }]
+    // => [{ id: '1', name: 'Alice', email: 'alice@example.com' }]
 
-    // Close database
     db.close();
 }
 
-main();
+main().catch(error => {
+    console.error(error);
+    process.exitCode = 1;
+});
 ```
+
+From a source checkout, use `require('./lib/sqlite-api.cjs')` instead. Database paths refer to the module's in-memory filesystem, not the host filesystem.
+
+### Typed Results
+
+Use `queryTyped` for numeric calculations, exact large integers, or binary data without parsing `query` strings:
+
+```javascript
+const rows = db.queryTyped(`
+    SELECT ? AS score, 9223372036854775807 AS id,
+           'Привіт' AS label, x'00ff' AS bytes, NULL AS missing
+`, [4.5]);
+console.log(rows[0].score.value.toFixed(1));
+console.log(rows[0].id.value === 9223372036854775807n);
+console.log(rows[0].bytes.value);
+console.log(rows[0].missing.type, rows[0].missing.value);
+```
+
+Here `db` is an open connection from the basic example. Every column contains a `{ type, value }` cell: `{ type: 'number', value: 4.5 }`, `{ type: 'bigint', value: 9223372036854775807n }`, a `'string'` cell, a `'blob'` cell with an owned `Uint8Array([0, 255])`, and `{ type: 'null', value: null }`. The `value` property always exists, including for NULL. CommonJS and ES modules provide the same method.
 
 ### Encryption Examples
 
@@ -304,7 +327,7 @@ main();
 const db = sqlite.open('/encrypted.db', 'password123');
 
 // Change password (re-key)
-db.exec("PRAGMA rekey = 'new-password'");
+db.rekey('new-password');
 
 // Multiple databases with different passwords
 const db1 = sqlite.open('/db1.db', 'password1');
@@ -319,48 +342,111 @@ db2.exec('SELECT count(*) FROM sqlite_master'); // OK
 
 ```html
 <script type="module">
-  import initSqlcipher from './dist/sqlcipher.js';
-  import { SQLiteAPI } from './lib/sqlite-api.js';
+  import { init } from './lib/sqlite-api.mjs';
 
-  const Module = await initSqlcipher();
-  const sqlite = new SQLiteAPI(Module);
+  const sqlite = await init();
 
   const db = sqlite.open('/mydb.db', 'secret');
   console.log('SQLCipher ready!');
+  db.close();
 </script>
 ```
 
+Serve the files over HTTP(S). The browser wrapper imports `dist/sqlcipher.mjs`, whose WASM binary is embedded by `SINGLE_FILE=1`. The CommonJS loader instead reads the adjacent `dist/sqlcipher.wasm` file.
+
 ## API Reference
+
+### Initialization
+
+- Node.js: `require('@7mind.io/sqlcipher-wasm').initSQLite()` returns a `Promise<SQLiteAPI>`.
+- Browser: `import { init } from './lib/sqlite-api.mjs'`, then `await init()`.
+- Both wrappers export `SQLiteAPI` and `SQLiteDatabase` for use with an initialized low-level module.
+
+Initialization is asynchronous; database methods are synchronous. The two entry points use different initialization function names.
+
+TypeScript consumers using NodeNext resolution receive declarations for the selected entry point: `initSQLite` for CommonJS and `init` for ES modules. `query` rows contain `string | null` values. `queryTyped` returns `SQLiteTypedRow[]`, mapping column names to `SQLiteTypedValue` cells. This correlated discriminated union pairs each literal `type` with its corresponding `value` payload; switching on `type` narrows the payload. Both entry points export these named types. Use an ES2020 or newer TypeScript target for bigint literals. For a CommonJS `.cts` consumer:
+
+```typescript
+import { initSQLite } from '@7mind.io/sqlcipher-wasm';
+import type { SQLiteTypedValue } from '@7mind.io/sqlcipher-wasm';
+
+function formatCell(cell: SQLiteTypedValue): string {
+    switch (cell.type) {
+        case 'number': return cell.value.toFixed(2);
+        case 'bigint': return cell.value.toString();
+        case 'string': return cell.value;
+        case 'blob': return cell.value.join(',');
+        case 'null': return String(cell.value);
+    }
+    const unreachable: never = cell;
+    return unreachable;
+}
+
+async function main() {
+    const sqlite = await initSQLite();
+    const db = sqlite.open();
+    const rows = db.queryTyped('SELECT ? AS value', [42]);
+    console.log(formatCell(rows[0].value));
+    db.close();
+}
+
+main().catch(console.error);
+```
 
 ### `SQLiteAPI`
 
 High-level JavaScript API for SQLCipher.
 
-#### `open(path, password?)`
+#### `open(filename?, key?)`
 
 Open or create a database.
 
-- `path` - Database file path (e.g., `/mydb.db`)
-- `password` - Encryption password (optional for unencrypted databases)
-- Returns: `Database` instance
+- `filename` - Virtual file path (e.g., `/mydb.db`); defaults to `:memory:`
+- `key` - Optional encryption passphrase, applied immediately after opening
+- Returns: `SQLiteDatabase` instance
 
-#### `Database` Methods
+Opening does not verify an encrypted file's key. Read the schema or execute a query to verify that the file can be decrypted.
 
-##### `exec(sql, params?)`
+#### `SQLiteDatabase` Methods
 
-Execute SQL statement.
+##### `exec(sql)`
+
+Execute one or more SQL statements through `sqlite3_exec`, without returning rows or binding parameters.
 
 - `sql` - SQL statement
-- `params` - Optional array of parameters for `?` placeholders
 - Returns: `void`
 
 ##### `query(sql, params?)`
 
-Execute query and return results.
+Prepare one SQL statement, bind parameters, step through results, and finalize the statement. Use this method for parameterized writes as well as SELECT queries.
 
 - `sql` - SQL query
-- `params` - Optional array of parameters
-- Returns: Array of result objects
+- `params` - Optional positional array of strings, numbers, or `null`
+- Returns: Array of result objects; column values are strings or `null`, including numeric SQL columns
+
+Writes without a `RETURNING` clause return an empty array. Safe integer parameters use `sqlite3_bind_int64`; other numbers use `sqlite3_bind_double`. Text parameters preserve embedded NUL characters. These binding rules apply to both query methods; the `query` result formatting remains unchanged, including its NUL-terminated text decoding.
+
+##### `queryTyped(sql, params?)`
+
+Prepare, bind, execute, and finalize one statement, returning plain row objects mapping column names to `{ type, value }` cells. Accepts the same SQL and positional string, number, or `null` parameters as `query`; bigint and BLOB parameters are not supported.
+
+Each cell uses its current row's SQLite runtime storage class, not the column's declared type:
+
+| SQLite storage class | Cell `type` | Cell `value` |
+| --- | --- | --- |
+| INTEGER | `'number'` or `'bigint'` | `number` from `Number.MIN_SAFE_INTEGER` through `Number.MAX_SAFE_INTEGER`, otherwise exact `bigint` |
+| REAL | `'number'` | `number`, including integral REAL values |
+| TEXT | `'string'` | UTF-8 `string`, preserving Unicode, leading BOM, and embedded NUL characters |
+| BLOB | `'blob'` | Independent `Uint8Array`; an empty BLOB returns a zero-length array |
+| NULL | `'null'` | `null`; the `value` property is present |
+
+A single result column may contain different cell types across rows. Safe INTEGER and REAL values both use `'number'`; no separate integer/real tag exists. No boolean, JSON, or date inference occurs. BLOB payloads remain valid after statement finalization, subsequent queries, and database closure. Column names become own enumerable properties, including `__proto__`; duplicate names retain the last cell.
+
+As with `query`, writes without `RETURNING` and empty result sets return `[]`. Invalid SQL, binding or execution errors, and calls after database closure throw an error. The wrapper does not expose reusable prepared statements.
+
+##### `setKey(key)` and `rekey(newKey)`
+
+`setKey` applies an encryption passphrase before accessing the database. `open` calls it when a key is supplied. `rekey` changes the key of an open encrypted database.
 
 ##### `close()`
 
@@ -372,27 +458,35 @@ Get number of rows changed by last statement.
 
 - Returns: `number`
 
+### Low-Level Module Access
+
+The CommonJS wrapper provides `sqlite.getModule()` for access to Emscripten `FS` and exported SQLite C functions. Use it to import or export database bytes, or to manage prepared statements directly. The browser wrapper exposes the initialized module through `sqlite.module` instead.
+
+Within each wrapper, both query methods share the prepare/bind/step/finalize path and differ only in row decoding. The typed reader inspects `sqlite3_column_type` for every cell, reads integers through `sqlite3_column_int64`, and copies text/BLOB bytes using `sqlite3_column_bytes` and `getValue`; it does not require an exported `HEAPU8`. Statement and temporary SQL buffers are released on success or failure. Bound text uses SQLite's transient-copy binding, and its temporary buffer is freed immediately.
+
+### Filesystem Lifetime
+
+The current build uses MEMFS. Closing and reopening a virtual path preserves its contents within the same initialized module, but does not persist it across process exits or page reloads. No IDBFS or NODEFS persistence is configured by the build.
+
 ## Test Suite
 
-The test suite includes 5 comprehensive test suites:
+The runner executes these 6 suites through CommonJS entry points in Node.js, including ESM wrapper checks; it does not run browser or Unity application tests:
 
 ### 1. Unit Tests (`test/test.cjs`)
 - Module loading and initialization
-- Basic SQL operations
-- Memory management
-- API correctness
+- Runtime method and filesystem availability
+- Memory allocation/free
+- C string round trips
 
 ### 2. End-to-End Tests (`test/e2e-test.cjs`)
-- Complete workflows
-- Multi-step operations
-- Error handling
-- Edge cases
+- CREATE, INSERT, SELECT, UPDATE, and DELETE workflows
+- Transactions and multiple database connections
+- JOINs, aggregates, indexes, and LIKE queries
 
 ### 3. File Database Tests (`test/file-db-test.cjs`)
-- File persistence
-- VFS (Virtual File System)
-- Database reopening
-- File operations
+- Virtual database creation and SQL operations
+- Close/reopen within the same MEMFS instance
+- Queries and updates after reopening
 
 ### 4. Encryption Tests (`test/encryption-test.cjs`)
 - PRAGMA key interface
@@ -403,15 +497,31 @@ The test suite includes 5 comprehensive test suites:
 - API key vs PRAGMA key equivalence
 
 ### 5. Cross-Platform Tests (`test/cross-platform-db-test.cjs`)
-- C++ (native SQLCipher) -> WASM compatibility
-- Database created with native SQLCipher, read by WASM
-- Binary compatibility verification
-- Real-world migration scenarios
+- Native SQLCipher C++ → WASM database import
+- Schema and sample data assertions
+- JOIN and aggregate queries
+- Index inspection
 
-Run all tests:
+### 6. Typed Query Tests (`test/typed-query-test.cjs`)
+- Safe integer boundaries, adjacent integers, and signed 64-bit extremes
+- REAL values, mixed storage classes, Unicode/BOM/NUL text, BLOBs, and NULL
+- BLOB ownership after finalization and later queries
+- Unusual column names, binding errors, closed databases, and legacy query results
+- CommonJS/ESM initialization and result parity
+
+TypeScript consumers in `test/type-consumer.cts` and `test/type-consumer.mts` check the package declarations with ES2020 and NodeNext resolution:
+
 ```bash
+tsc --strict --noEmit --target ES2020 --module NodeNext --moduleResolution NodeNext test/type-consumer.cts test/type-consumer.mts
+```
+
+Prepare the generated cross-platform test, then run all tests from the default Nix shell:
+```bash
+./tools/prepare-cross-platform-test.sh
 npm test
 ```
+
+The preparation script compiles `tools/create-test-db.cpp` with the native SQLCipher package, creates `/tmp/test-from-cpp.db`, and embeds its bytes in the ignored `test/cross-platform-db-test.cjs`. Regenerate the fixture when changing the native library or its database settings.
 
 Run tests in watch mode:
 ```bash
@@ -426,17 +536,18 @@ Run performance benchmarks:
 npm run bench
 ```
 
-Benchmarks measure:
-- Module initialization time
-- Memory allocation performance
-- Database operations (INSERT, SELECT, UPDATE, DELETE)
-- Query performance
-- Encryption overhead
-- Memory usage patterns
+The current benchmarks measure:
+- WASM memory allocation/free for 1 KB and 1 MB blocks
+- JavaScript `TextEncoder`/`TextDecoder` operations
+- Direct heap reads/writes when heap arrays are available
+- C function dispatch overhead, including the exception path when the requested function is not exported
+- JavaScript `ArrayBuffer` and typed-array operations
+
+They do not measure SQL queries, encryption overhead, or module initialization time.
 
 ## Cross-Platform Compatibility
 
-Databases created with this WASM build are **100% compatible** with native SQLCipher.
+Database transfer requires matching SQLCipher format parameters and the encryption passphrase. The generated test exercises native C++ → WASM import for its fixture; it does not establish compatibility for every SQLCipher version or configuration.
 
 ### Testing Cross-Platform Compatibility
 
@@ -451,16 +562,35 @@ This creates a database with native SQLCipher (C++), encodes it, and verifies WA
 
 ### Migrating from Native SQLCipher
 
-Just copy your `.db` file and open it with the same password:
+Read the host file and explicitly copy its bytes into MEMFS before opening it:
 
 ```javascript
-const db = sqlite.open('/path/to/existing.db', 'same-password');
-const data = db.query('SELECT * FROM your_table');
+const fs = require('node:fs');
+const { initSQLite } = require('@7mind.io/sqlcipher-wasm');
+
+async function main() {
+    const sqlite = await initSQLite();
+    const module = sqlite.getModule();
+    module.FS.writeFile('/imported.db', fs.readFileSync('./existing.db'));
+
+    const db = sqlite.open('/imported.db', 'same-password');
+    console.log(db.query('SELECT name FROM sqlite_master'));
+    db.close();
+
+    fs.writeFileSync('./exported.db', module.FS.readFile('/imported.db'));
+}
+
+main().catch(error => {
+    console.error(error);
+    process.exitCode = 1;
+});
 ```
+
+If the file uses non-default settings, configure the open connection before its first database read. The wrapper does not detect or migrate the file format automatically.
 
 ### Using WASM Databases in Native Apps
 
-The reverse also works - databases created in WASM can be used in native applications.
+Close the WASM database and export its virtual file with `FS.readFile`, as above. Open the exported file in native SQLCipher with matching settings. Native readback is not covered by the current cross-platform test.
 
 ## Development
 
@@ -488,33 +618,22 @@ rm -rf target/ dist/
 
 ### Adding Tests
 
-Add to appropriate test file in `test/`:
-
-```javascript
-test('Your test name', () => {
-    const db = sqlite.open('/test.db', 'password');
-    db.exec('CREATE TABLE test (id INTEGER)');
-    const result = db.query('SELECT * FROM test');
-    assert.strictEqual(result.length, 0);
-    db.close();
-});
-```
-
-Tests are automatically picked up by `npm test`.
+Extend the appropriate suite in `test/` using its existing assertions. The runner lists suite files explicitly in `test/run-all-tests.cjs`; register any new suite there. Change the native fixture generator and preparation script rather than editing the generated cross-platform test.
 
 ## CI/CD
 
 GitHub Actions workflows:
 
-- **CI/CD** (`.github/workflows/ci.yml`) - Build, test, and publish on releases
-- **PR Checks** (`.github/workflows/pr-check.yml`) - Quick validation on pull requests
+- **CI/CD** (`.github/workflows/ci.yml`) - Build and test on configured branches, pull requests, tags, and releases; publish on `v*` tag pushes
+- **PR Checks** (`.github/workflows/pr-check.yml`) - Shell syntax checks, builds, tests, and artifact size checks on pull requests
 
 CI pipeline:
 1. Build OpenSSL + SQLCipher WASM (`nix develop`)
 2. Build OpenSSL + SQLCipher WebGL (`nix develop .#webgl`)
-3. Run tests and benchmarks
-4. Upload `sqlcipher-wasm.zip` and `sqlcipher-webgl.zip` as artifacts
-5. Publish to NPM and create GitHub Release on tags
+3. Build the SQLCipher + libtomcrypt source bundle
+4. Generate the native database fixture, then run tests and benchmarks
+5. Upload `sqlcipher-wasm.zip`, `sqlcipher-webgl.zip`, and `sqlcipher-amalgamation.zip` as artifacts
+6. Publish to npm and create a GitHub Release on `v*` tag pushes
 
 ## Troubleshooting
 
@@ -570,7 +689,7 @@ nix develop --command bash -c "which sqlcipher"
 ## Performance Tips
 
 1. **Batch operations** - Use transactions for multiple inserts
-2. **Prepare statements** - Reuse prepared statements for repeated queries
+2. **Parameter binding** - Use `query(sql, params)` for bound values; the wrapper prepares and finalizes each call
 3. **Appropriate memory settings** - Adjust `PRAGMA cache_size`
 4. **Index wisely** - Create indexes for frequently queried columns
 5. **Use the benchmarks** - Profile before optimizing
@@ -587,14 +706,7 @@ db.exec('COMMIT');
 
 ## Contributing
 
-Contributions welcome! Areas for improvement:
-
-- [ ] Browser-based test runner
-- [ ] More comprehensive benchmarks
-- [ ] IndexedDB persistence examples
-- [ ] Worker thread examples
-- [ ] React/Vue/Svelte integration examples
-- [ ] Performance optimization guides
+Keep changes scoped to the affected build or wrapper, add assertions to the corresponding test suite, and validate with `npm test` after preparing the native fixture. For Unity changes, also build and run the consuming Unity application; the Node.js suites do not cover it.
 
 ## Publishing
 
@@ -605,9 +717,7 @@ npm version patch  # or minor, major
 git push --tags
 ```
 
-Create a GitHub release to trigger automatic publishing to:
-- NPM registry
-- GitHub Packages
+Pushing a `v*` tag triggers npm publication with provenance and creates a GitHub Release containing all three build archives. `prepublishOnly` runs the WASM build, so the publishing environment must have its OpenSSL WASM dependency available. The workflow does not publish to GitHub Packages.
 
 ## Environment Variables
 
@@ -633,6 +743,7 @@ Dependencies:
 - SQLCipher - BSD-style license
 - SQLite - Public domain
 - OpenSSL - Apache License 2.0
+- libtomcrypt - See `LICENSE_libtomcrypt` in the source bundle
 - Emscripten - MIT/NCSA License
 
 ## Acknowledgments

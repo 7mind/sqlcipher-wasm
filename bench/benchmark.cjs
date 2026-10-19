@@ -116,7 +116,7 @@ async function loadSqlcipher() {
         });
     } catch (error) {
         console.error(`${colors.red}Failed to load SQLCipher module:${colors.reset}`, error.message);
-        console.error(`${colors.yellow}Make sure to run './build.sh' first!${colors.reset}`);
+        console.error(`${colors.yellow}Run './build-openssl.sh && ./build-wasm.sh' in the default Nix shell first.${colors.reset}`);
         process.exit(1);
     }
 }
